@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ETH token icon from web3icons (branded variant), MIT licence: https://github.com/0xa3k5/web3icons -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12.0001 3V9.65073L17.6249 12.1661L12.0001 3Z"
+        android:fillColor="#FF8FFCF3" />
+    <path
+        android:pathData="M11.9999 3L6.37512 12.1661L11.9999 9.65073V3Z"
+        android:fillColor="#FFCABCF8" />
+    <path
+        android:pathData="M12.0001 16.477V20.9993L17.6249 13.2146L12.0001 16.477Z"
+        android:fillColor="#FFCBA7F5" />
+    <path
+        android:pathData="M11.9999 20.9993V16.477L6.37512 13.2146L11.9999 20.9993Z"
+        android:fillColor="#FF74A0F3" />
+    <path
+        android:pathData="M12.0001 15.4291L17.6249 12.1668L12.0001 9.65137V15.4291Z"
+        android:fillColor="#FFCBA7F5" />
+    <path
+        android:pathData="M6.37512 12.1668L11.9999 15.4291V9.65137L6.37512 12.1668Z"
+        android:fillColor="#FF74A0F3" />
+    <path
+        android:pathData="M11.9999 15.4285L6.37512 12.1661L11.9999 3L17.6248 12.1661L11.9999 15.4285ZM6.74861 11.9006L11.9099 3.49048V9.60573L6.74861 11.9006ZM6.67211 12.1301L11.9099 9.80373V15.1675L6.67211 12.1301ZM12.0899 9.80373V15.1675L17.3232 12.1301L12.0899 9.80373ZM12.0899 9.60573L17.2512 11.9006L12.0899 3.49048V9.60573Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FF202699" />
+    <path
+        android:pathData="M11.9999 16.4057L6.37512 13.2109L11.9999 21L17.6248 13.2109L11.9999 16.4057ZM7.0051 13.7734L11.9099 16.5632V20.5681L7.0051 13.7734ZM12.0899 16.5632V20.5681L16.9948 13.7734L12.0899 16.5632Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FF202699" />
+</vector>

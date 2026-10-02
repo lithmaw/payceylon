@@ -1,0 +1,22 @@
+*.iml
+
+# Android Studio: share only code style and inspections
+/.idea/*
+!/.idea/codeStyles/
+!/.idea/inspectionProfiles/
+.gradle
+/local.properties
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Kotlin compiler caches
+.kotlin/
+
+# Release signing (never commit keys)
+*.jks
+*.keystore
+keystore.properties

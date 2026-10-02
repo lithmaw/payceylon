@@ -1,0 +1,15 @@
+# Normalise line endings in the repo; check out with the platform's default.
+* text=auto
+
+# Scripts must keep their native line endings.
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ttf binary
+*.jar binary
