@@ -4,15 +4,30 @@ PayCeylon is an Android wallet for Sri Lanka, built with Kotlin and Jetpack Comp
 fiat (LKR) wallet and a crypto wallet (USDT, BTC, ETH, SOL), with sending, receiving, swapping,
 top-ups, withdrawals and account settings.
 
-The app is a **complete front end running on in-memory demo data**. The backend contract it
-expects is in [`docs/BACKEND_API.md`](docs/BACKEND_API.md).
+The app talks to the PayCeylon API in [`backend/`](backend/) (FastAPI + PostgreSQL, deployed on
+Railway), signs users in with Firebase phone authentication, and keeps an on-device Room copy
+of the wallet. The API contract is in [`docs/BACKEND_API.md`](docs/BACKEND_API.md). Money,
+cards, banks and crypto are simulated: no real funds move.
 
-**Demo login:** any valid Sri Lankan mobile number (e.g. `77 123 4567`), then code `123456`.
+**Demo login:** the Firebase project is on the free plan, so sign in with a test number:
+`77 000 0001` (code `111111`) or `77 000 0002` (code `222222`). More can be added in Firebase
+Console → Authentication → Sign-in method → Phone. Real SMS needs the Blaze plan.
+
+## Project criteria
+
+| Criterion | Where |
+| --- | --- |
+| Jetpack Compose (Kotlin) | All UI in `ui/` |
+| Local database | Room in `data/local/`: last server snapshot (profile, photo, balances, transactions, notifications, cards/banks, settings); the app opens from it instantly and works read-only offline |
+| Hardware features | Camera (CameraX + ML Kit QR scanning), biometric sensor (app unlock) |
+| Remote data source | PayCeylon REST API (`data/HttpBackend.kt`) and Firebase |
+| Authentication | Firebase phone (SMS code) sign-in, verified by the API on every request; biometric app lock |
 
 ## Features
 
-- **Onboarding and sign-in:** three swipeable onboarding pages, Sri Lankan phone number entry,
-  6-digit SMS code with resend countdown.
+- **Onboarding and sign-in:** onboarding pages, Sri Lankan phone number entry, SMS code via
+  Firebase with resend, then a one-time profile setup (name and @username required; photo and
+  email optional).
 - **Home:** fiat / crypto wallet switcher (full-screen transition, crypto switches the app to a
   dark theme), balance card with hide/show (blurred), month-on-month change pill, linked card
   chip, recent transactions, and a glass action bar that drags open for more actions.
@@ -26,8 +41,11 @@ expects is in [`docs/BACKEND_API.md`](docs/BACKEND_API.md).
   (crypto) and a shareable receipt.
 - **Notifications** dropdown on the bell: transactions plus account and security changes.
 - **Settings:** personal details (photo, name, username, phone with SMS check, email),
-  cards & bank accounts (card brand detected from the number, with its logo), security and
-  notification toggles, privacy policy, terms, help, log out.
+  cards & bank accounts (card brand detected from the number, with its logo), biometric unlock,
+  security and notification toggles, privacy policy, terms, help, log out.
+- **Live updates:** balances, history and notifications refresh every 5 seconds while the app
+  is open, so a payment from another phone appears within seconds.
+- **Offline:** the last loaded wallet stays visible with an "Offline · showing saved data" note.
 - **Deep links:** `payceylon://pay?to=<handle>[&amount=][&currency=]` opens Send Money.
 
 ## Build and run
@@ -35,65 +53,87 @@ expects is in [`docs/BACKEND_API.md`](docs/BACKEND_API.md).
 Requirements: Android Studio (recent stable), Android SDK 37, JDK 17+ (Android Studio's bundled
 JDK works). The Gradle wrapper (9.5) downloads everything else.
 
-```bash
-./gradlew :app:assembleDebug          # Windows: .\gradlew.bat :app:assembleDebug
-./gradlew :app:testDebugUnitTest      # unit tests
+Per-machine settings go in the untracked `local.properties` (next to `sdk.dir`):
+
+```properties
+payceylon.apiBaseUrl=https://api-production-39f34.up.railway.app/
+payceylon.firebase.apiKey=<Web API key from Firebase project settings>
+payceylon.firebase.appId=1:62365306724:android:3ff33f7a6f4309ecb03471
+payceylon.firebase.projectId=payceylon-dev-lithma
 ```
 
-The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`. Or open the folder in Android
-Studio and run the `app` configuration. Minimum Android version: 7.0 (API 24). Blur effects
+For a local backend instead, use `http://<your PC's LAN IP>:8000/` (debug builds allow plain
+HTTP). Firebase phone auth on Android also needs the SHA-1 and SHA-256 of the signing key
+registered in the Firebase project; each computer's debug key is different, so register yours
+(`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`)
+or build the shared APK from one machine.
+
+```bash
+./gradlew :app:assembleDebug            # Windows: .\gradlew.bat :app:assembleDebug
+./gradlew :app:testDebugUnitTest        # unit tests (fake backend and cache)
+./gradlew :app:connectedDebugAndroidTest  # Room tests on a device/emulator (uninstalls the app)
+```
+
+The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`; share it to install on other
+phones (allow "Install unknown apps"). Minimum Android version: 7.0 (API 24). Blur effects
 need Android 12+; older versions fall back to plain tints and fades.
+
+`gradle.properties` sets `android.disallowKotlinSourceSets=false` because Room's code generator
+(KSP) doesn't yet register sources the way AGP 9's built-in Kotlin expects.
 
 ## Project structure
 
 ```
 app/src/main/java/com/payceylon/app/
-├── MainActivity.kt            Entry point, deep-link intake
+├── MainActivity.kt              Entry point (FragmentActivity for the biometric prompt), deep links
+├── PayCeylonApplication.kt      Firebase + service setup from local.properties
+├── data/
+│   ├── Backend.kt               What the screens need from the server (interface), ApiException
+│   ├── HttpBackend.kt           OkHttp + kotlinx.serialization client for the API
+│   ├── PhoneAuth.kt             Firebase phone verification as suspend calls
+│   └── local/                   Room database (entities, DAO) and the WalletCache over it
 └── ui/
-    ├── PayCeylonApp.kt        Navigation (single-activity, state-driven) and screen wiring
-    ├── auth/                  Onboarding, phone number, OTP
-    ├── wallet/                Home, Send, Receive, Swap, Top Up, Withdraw, transactions
-    │   └── WalletViewModel.kt Wallet state, fees, rates, demo data  ← backend seam
-    ├── account/               Settings, profile, cards & banks, notifications, legal
-    │   └── AccountState.kt    Profile, linked accounts, settings, notifications ← backend seam
-    ├── components/            Shared UI: dropdowns, text field, QR code, motion helpers
-    └── theme/                 Colours (fiat / crypto palettes), Inter typography
-docs/BACKEND_API.md            REST contract for the backend
-images/                        Source design assets from Figma
+    ├── PayCeylonApp.kt          Navigation, session states, polling, app lock, offline note
+    ├── auth/                    Onboarding, OTP, profile setup, connection-problem screen
+    ├── wallet/                  Home, Send, Receive, Swap, Top Up, Withdraw, transactions
+    │   └── WalletViewModel.kt   Session, wallet state, actions; API first, Room as the local copy
+    ├── account/                 Settings, profile, cards & banks, notifications, legal
+    │   └── AccountState.kt      Profile, linked accounts, settings, notifications
+    ├── components/              Shared UI, submit helper, biometric app lock
+    └── theme/                   Colours (fiat / crypto palettes), Inter typography
+backend/                         FastAPI + PostgreSQL API (see backend/README.md)
+docs/BACKEND_API.md              REST contract
+images/                          Source design assets from Figma
 ```
 
-## Connecting the backend
+## How data flows
 
-All data lives in two classes, so the backend can be wired in without touching the screens:
-
-| Today (in memory) | Replace with | API section |
-| --- | --- | --- |
-| `DemoOtpCode` in `ui/auth/PayCeylonAuthFlow.kt` | `/auth/otp`, `/auth/verify` | Auth |
-| `WalletViewModel` balances, `transactions`, `send`, `swap`, `topUp`, `withdraw`, `monthlyChangePercent` | `/wallet/*`, `/transactions`, `/payments`, `/swaps`, `/topups`, `/withdrawals` | Wallet, Payments |
-| `SwapRates`, `WalletFees` | `/rates`, `/swaps/quote`, server-side fees | Swap |
-| `PayCeylonDirectory`, `searchPayCeylonUsers` | `/users/search`, `/users/{handle}` | Payments |
-| `AccountState` profile, settings, payment methods, notifications | `/me`, `/me/settings`, `/payment-methods`, `/notifications` | Profile, Settings, Payment methods, Notifications |
-| `CryptoToken.address` (example addresses) | `/wallet/addresses` | Wallet |
-
-Suggested approach on the app side: add Retrofit + kotlinx.serialization, put each area behind
-a repository interface (`AuthRepository`, `WalletRepository`, `AccountRepository`) with the
-current in-memory logic as the fake implementation, and have `WalletViewModel` call the
-repository from `viewModelScope`. Keep the validation in `AccountValidation.kt` on both sides.
+1. Sign-in: Firebase verifies the phone number; the app sends the Firebase ID token to
+   `POST /v1/auth/verify`, which creates or loads the account.
+2. Every request carries the ID token; the API verifies it with the Firebase Admin SDK.
+3. At launch the wallet is shown from Room immediately, then refreshed from the API; each
+   successful refresh is written back to Room. Logging out clears Room.
+4. Payments, swaps, top-ups and withdrawals send an `Idempotency-Key`, so a retried request is
+   never applied twice.
 
 ### Security rules
 
-- Never send or store full card numbers or CVVs: tokenize cards with a PCI DSS compliant
-  provider and send only the token.
-- Keep auth tokens in Android Keystore-backed storage, never plain SharedPreferences.
+- Card numbers and CVVs never leave the device: the app sends only brand, last four, expiry and
+  a demo token (a real build would use a PCI DSS tokenization provider's SDK).
+- Firebase manages the sign-in tokens; the Room cache never stores them.
 - App backup is disabled (`allowBackup="false"`) so wallet data never leaves the device.
 - Money is `BigDecimal` in the app and decimal strings in JSON, never floating point.
+- Debug builds allow plain HTTP for a local backend; release builds don't.
 
 ## Known gaps
 
-- All data is in memory and resets when the app restarts (no Room cache yet).
-- Biometric approval is a stored setting only; `androidx.biometric` is not wired up.
-- Swap rates and crypto deposit addresses are examples.
-- Logging out returns to onboarding but keeps the in-memory demo data.
+- "Biometric approval" (confirm payments) is a saved setting only; biometric *app unlock* works.
+- The Receive screen shows example crypto addresses; the API's `/wallet/addresses` isn't used yet.
+- Withdrawals complete immediately; the spec has them start as `PENDING`.
+- Removing a card or bank doesn't create a security notification.
+- Swap rates are fixed demo prices; no real bank, card or blockchain transfers happen.
+- Real SMS codes need the Firebase Blaze plan; until then use the test numbers above.
+- No push notifications (FCM); the app polls every 5 seconds while open.
 
 ## Credits
 
