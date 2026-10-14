@@ -10,6 +10,7 @@ import com.payceylon.app.ui.account.PaymentMethodType
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.UserProfile
 import com.payceylon.app.ui.wallet.Asset
+import com.payceylon.app.ui.wallet.CryptoToken
 import com.payceylon.app.ui.wallet.PayCeylonUser
 import com.payceylon.app.ui.wallet.TransactionDirection
 import com.payceylon.app.ui.wallet.WalletTransaction
@@ -122,6 +123,11 @@ class HttpBackend(baseUrl: String) : Backend {
     override suspend fun balances(): Map<Asset, BigDecimal> =
         get<BalancesResponse>("v1/wallet/balances").balances
             .mapNotNull { (code, value) -> Asset.fromCode(code)?.let { it to BigDecimal(value) } }
+            .toMap()
+
+    override suspend fun addresses(): Map<CryptoToken, String> =
+        get<Map<String, String>>("v1/wallet/addresses")
+            .mapNotNull { (symbol, address) -> CryptoToken.entries.firstOrNull { it.symbol == symbol }?.let { it to address } }
             .toMap()
 
     override suspend fun transactions(limit: Int): List<WalletTransaction> =

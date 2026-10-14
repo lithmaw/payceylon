@@ -10,6 +10,7 @@ import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.UserProfile
 import com.payceylon.app.ui.wallet.Asset
+import com.payceylon.app.ui.wallet.CryptoToken
 import com.payceylon.app.ui.wallet.PayCeylonUser
 import com.payceylon.app.ui.wallet.WalletTransaction
 import java.math.BigDecimal
@@ -53,6 +54,9 @@ interface Backend {
     suspend fun updateSetting(setting: AccountSetting, enabled: Boolean): Map<AccountSetting, Boolean>
 
     suspend fun balances(): Map<Asset, BigDecimal>
+
+    /** This user's deposit address for each token (demo addresses in each network's format). */
+    suspend fun addresses(): Map<CryptoToken, String>
     suspend fun transactions(limit: Int = 100): List<WalletTransaction>
     suspend fun searchUsers(query: String, limit: Int): List<PayCeylonUser>
 

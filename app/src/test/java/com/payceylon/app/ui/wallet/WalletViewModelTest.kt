@@ -259,6 +259,23 @@ class WalletViewModelTest {
     }
 
     @Test
+    fun depositAddressesComeFromTheServerAndAreSaved() {
+        val wallet = signedIn()
+        assertEquals("USDT-ADDRESS-kasun.p", wallet.addressOf(CryptoToken.USDT))
+        assertEquals("USDT-ADDRESS-kasun.p", cache.snapshot!!.addresses[CryptoToken.USDT])
+    }
+
+    @Test
+    fun offlineLaunchUsesSavedAddresses() {
+        cache.snapshot = savedWallet("1.00").copy(addresses = mapOf(CryptoToken.BTC to "bc1qsaved"))
+        backend.failNext = ApiException(0, ApiException.NetworkErrorCode, "Can't reach PayCeylon.")
+        val wallet = WalletViewModel(backend, cache)
+        assertEquals("bc1qsaved", wallet.addressOf(CryptoToken.BTC))
+        // Tokens with no saved address fall back to the example one rather than showing nothing.
+        assertEquals(CryptoToken.ETH.address, wallet.addressOf(CryptoToken.ETH))
+    }
+
+    @Test
     fun signingOutWipesTheDeviceCopy() = runTest {
         val wallet = signedIn()
         wallet.logOut()

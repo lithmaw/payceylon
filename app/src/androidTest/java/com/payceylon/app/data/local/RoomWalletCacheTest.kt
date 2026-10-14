@@ -11,6 +11,7 @@ import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.PaymentMethodType
 import com.payceylon.app.ui.account.UserProfile
 import com.payceylon.app.ui.wallet.Asset
+import com.payceylon.app.ui.wallet.CryptoToken
 import com.payceylon.app.ui.wallet.TransactionDirection
 import com.payceylon.app.ui.wallet.WalletTransaction
 import com.payceylon.app.ui.wallet.WalletType
@@ -58,6 +59,7 @@ class RoomWalletCacheTest {
             PaymentMethod("pm1", PaymentMethodType.Card, "Visa", "4242", "Kasun Perera", "Expires 08/29", CardBrand.Visa),
         ),
         settings = mapOf(AccountSetting.HideBalance to true, AccountSetting.Promotions to false),
+        addresses = mapOf(CryptoToken.USDT to "TabcdefghijkmnopqrstuvwxyzABCDEFGH", CryptoToken.ETH to "0x" + "a".repeat(40)),
         savedAt = 42L,
     )
 
@@ -72,6 +74,7 @@ class RoomWalletCacheTest {
         assertEquals(snapshot.notifications, loaded.notifications)
         assertEquals(snapshot.paymentMethods, loaded.paymentMethods) // server order kept
         assertEquals(snapshot.settings, loaded.settings)
+        assertEquals(snapshot.addresses, loaded.addresses)
         assertEquals(42L, loaded.savedAt)
     }
 

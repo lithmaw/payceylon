@@ -9,6 +9,7 @@ import com.payceylon.app.ui.account.PaymentMethodType
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.UserProfile
 import com.payceylon.app.ui.wallet.Asset
+import com.payceylon.app.ui.wallet.CryptoToken
 import com.payceylon.app.ui.wallet.PayCeylonUser
 import com.payceylon.app.ui.wallet.SwapRates
 import com.payceylon.app.ui.wallet.TransactionDirection
@@ -90,6 +91,9 @@ class FakeBackend(
     }
 
     override suspend fun balances(): Map<Asset, BigDecimal> = also { call() }.balances.toMap()
+
+    override suspend fun addresses(): Map<CryptoToken, String> =
+        also { call() }.let { CryptoToken.entries.associateWith { "${it.symbol}-ADDRESS-${profile.handle}" } }
     override suspend fun transactions(limit: Int): List<WalletTransaction> = also { call() }.history.take(limit)
 
     override suspend fun searchUsers(query: String, limit: Int): List<PayCeylonUser> {

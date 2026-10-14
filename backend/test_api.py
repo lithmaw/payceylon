@@ -202,6 +202,56 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(await self.balance(token), Decimal("31958.75"))
 
+    async def _bank_withdrawal(self):
+        token, _ = await self.sign_up()
+        bank = (await self.client.post("/v1/payment-methods/banks", headers=self.auth(token), json={
+            "bank": "Sampath Bank", "accountNumber": "987654321", "holder": "Kasun Perera",
+            "accountType": "CURRENT"})).json()
+        tx = (await self.client.post("/v1/withdrawals", headers=self.auth(token, "w-settle"),
+                                     json={"amount": "100.00", "paymentMethodId": bank["id"]})).json()
+        return token, tx
+
+    async def test_withdrawal_stays_pending_until_the_settle_time(self):
+        token, tx = await self._bank_withdrawal()
+        self.assertEqual(tx["status"], "PENDING")
+        self.assertEqual(await main.settle_withdrawals(main.app.state.pool), 0)
+        stored = (await self.client.get(f"/v1/transactions/{tx['id']}", headers=self.auth(token))).json()
+        self.assertEqual(stored["status"], "PENDING")
+
+    async def test_withdrawal_completes_and_notifies_after_the_settle_time(self):
+        token, tx = await self._bank_withdrawal()
+        with mock.patch.object(main.settings, "withdrawal_settle_seconds", 0):
+            self.assertEqual(await main.settle_withdrawals(main.app.state.pool), 1)
+            self.assertEqual(await main.settle_withdrawals(main.app.state.pool), 0)  # only once
+        stored = (await self.client.get(f"/v1/transactions/{tx['id']}", headers=self.auth(token))).json()
+        self.assertEqual(stored["status"], "COMPLETED")
+        latest = (await self.client.get("/v1/notifications", headers=self.auth(token))).json()["items"][0]
+        self.assertEqual((latest["title"], latest["transactionId"]), ("Withdrawal complete", tx["id"]))
+
+    async def test_removing_a_card_creates_a_security_notification(self):
+        token, _ = await self.sign_up()
+        card = (await self.client.post("/v1/payment-methods/cards", headers=self.auth(token), json={
+            "token": "demo_tok_remove01", "holder": "Kasun Perera", "brand": "Visa",
+            "last4": "1111", "expiry": "09/30"})).json()
+        response = await self.client.delete(f"/v1/payment-methods/{card['id']}", headers=self.auth(token))
+        self.assertEqual(response.status_code, 204)
+        latest = (await self.client.get("/v1/notifications", headers=self.auth(token))).json()["items"][0]
+        self.assertEqual((latest["kind"], latest["title"]), ("SECURITY", "Card removed"))
+        self.assertIn("1111", latest["body"])
+
+    async def test_deposit_addresses_are_per_user_and_in_each_tokens_format(self):
+        first, _ = await self.sign_up()
+        second, _ = await self.sign_up("Nimal Silva")
+        mine = (await self.client.get("/v1/wallet/addresses", headers=self.auth(first))).json()
+        again = (await self.client.get("/v1/wallet/addresses", headers=self.auth(first))).json()
+        theirs = (await self.client.get("/v1/wallet/addresses", headers=self.auth(second))).json()
+        self.assertEqual(mine, again)  # stable
+        self.assertTrue(all(mine[asset] != theirs[asset] for asset in mine))
+        self.assertRegex(mine["USDT"], r"^T[1-9A-HJ-NP-Za-km-z]{33}$")
+        self.assertRegex(mine["BTC"], r"^bc1q[02-9ac-hj-np-z]{38}$")
+        self.assertRegex(mine["ETH"], r"^0x[0-9a-f]{40}$")
+        self.assertRegex(mine["SOL"], r"^[1-9A-HJ-NP-Za-km-z]{44}$")
+
     async def test_other_users_transactions_are_hidden(self):
         sender, _ = await self.sign_up()
         other, receiver_handle = await self.sign_up("Nimal Silva")

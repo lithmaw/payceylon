@@ -93,8 +93,12 @@ import com.payceylon.app.ui.wallet.WalletSwitchOverlay
 import com.payceylon.app.ui.wallet.WalletType
 import com.payceylon.app.ui.wallet.WalletViewModel
 import com.payceylon.app.ui.wallet.WithdrawScreen
+import com.payceylon.app.data.ApiException
+import com.payceylon.app.ui.wallet.toAmountString
 import com.payceylon.app.ui.wallet.toKeypadInput
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 /** Shown while the wallet comes from the device's local database because the server is unreachable. */
 @Composable
@@ -241,6 +245,19 @@ fun PayCeylonApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    /**
+     * With "Biometric approval" on, money only leaves after the user passes the system prompt.
+     * Phones without biometrics or a screen lock skip it (nothing to confirm with).
+     */
+    suspend fun confirmPayment(description: String) {
+        if (!account.isEnabled(AccountSetting.BiometricApproval) || !canLockApp(context)) return
+        val activity = context.findActivity() as? FragmentActivity ?: return
+        val passed = suspendCancellableCoroutine { continuation ->
+            promptForUnlock(activity, description) { if (continuation.isActive) continuation.resume(it) }
+        }
+        if (!passed) throw ApiException(0, "NOT_CONFIRMED", "Payment not confirmed.")
+    }
+
     fun setAppLock(enable: Boolean) {
         val activity = context.findActivity() as? FragmentActivity
         when {
@@ -350,6 +367,7 @@ fun PayCeylonApp(
                             }
                         },
                         onTokenChange = { walletViewModel.selectedToken = it },
+                        addressOf = walletViewModel::addressOf,
                         onSend = { destination = AppDestination.QrScan },
                         onReceive = { destination = AppDestination.Receive },
                         onSwap = { destination = AppDestination.Swap },
@@ -412,7 +430,10 @@ fun PayCeylonApp(
 
                     AppDestination.TopUp -> TopUpScreen(
                         methods = account.paymentMethods,
-                        onTopUp = { amount, method, key -> walletViewModel.topUp(amount, method, key) },
+                        onTopUp = { amount, method, key ->
+                            confirmPayment("Top up LKR ${amount.toAmountString(Asset.LKR)} from ${method.title}")
+                            walletViewModel.topUp(amount, method, key)
+                        },
                         onAddMethod = { openAddMethod(AppDestination.AddCard, origin = AppDestination.TopUp) },
                         onBack = ::goBack,
                         onDone = { destination = AppDestination.Home },
@@ -421,7 +442,10 @@ fun PayCeylonApp(
                     AppDestination.Withdraw -> WithdrawScreen(
                         balance = walletViewModel.balanceOf(Asset.LKR),
                         banks = account.banks,
-                        onWithdraw = { amount, bank, key -> walletViewModel.withdraw(amount, bank, key) },
+                        onWithdraw = { amount, bank, key ->
+                            confirmPayment("Withdraw LKR ${amount.toAmountString(Asset.LKR)} to ${bank.title}")
+                            walletViewModel.withdraw(amount, bank, key)
+                        },
                         onAddBank = { openAddMethod(AppDestination.AddBank, origin = AppDestination.Withdraw) },
                         onBack = ::goBack,
                         onDone = { destination = AppDestination.Home },
@@ -526,7 +550,10 @@ fun PayCeylonApp(
                             initialAsset = prefillAsset ?: walletViewModel.selectedAsset,
                             initialAmount = prefillAmount,
                             balanceOf = walletViewModel::balanceOf,
-                            onSend = { amount, asset, key -> walletViewModel.send(recipientHandle, amount, asset, key) },
+                            onSend = { amount, asset, key ->
+                                confirmPayment("Send ${asset.code} ${amount.toAmountString(asset)} to @$recipientHandle")
+                                walletViewModel.send(recipientHandle, amount, asset, key)
+                            },
                             onBack = ::goBack,
                             onDone = { destination = AppDestination.Home },
                         )

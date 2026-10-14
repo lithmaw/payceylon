@@ -125,12 +125,18 @@ images/                          Source design assets from Figma
 - Money is `BigDecimal` in the app and decimal strings in JSON, never floating point.
 - Debug builds allow plain HTTP for a local backend; release builds don't.
 
+## Simulated behaviour
+
+- **Biometric approval:** when on, Send, Withdraw and Top up ask for fingerprint, face or screen
+  lock first (skipped on phones with no screen lock).
+- **Withdrawals** start as *Pending* and the server completes them after 5 minutes
+  (`WITHDRAWAL_SETTLE_SECONDS`), sending a "Withdrawal complete" notification, like a bank
+  transfer clearing. The balance is debited when the withdrawal is made.
+- **Deposit addresses** are per user and in each network's real format (TRC-20, bc1q, 0x,
+  Solana), derived from the user id. They have no keys behind them: never send real crypto.
+
 ## Known gaps
 
-- "Biometric approval" (confirm payments) is a saved setting only; biometric *app unlock* works.
-- The Receive screen shows example crypto addresses; the API's `/wallet/addresses` isn't used yet.
-- Withdrawals complete immediately; the spec has them start as `PENDING`.
-- Removing a card or bank doesn't create a security notification.
 - Swap rates are fixed demo prices; no real bank, card or blockchain transfers happen.
 - Real SMS codes need the Firebase Blaze plan; until then use the test numbers above.
 - No push notifications (FCM); the app polls every 5 seconds while open.

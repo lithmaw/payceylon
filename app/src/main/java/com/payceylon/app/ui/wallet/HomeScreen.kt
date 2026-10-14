@@ -129,6 +129,8 @@ fun HomeScreen(
     holdBalanceCount: Boolean,
     onWalletChange: (WalletType) -> Unit,
     onTokenChange: (CryptoToken) -> Unit,
+    /** Deposit address for a token: the per-user one from the server once loaded. */
+    addressOf: (CryptoToken) -> String,
     onSend: () -> Unit,
     onReceive: () -> Unit,
     onSwap: () -> Unit,
@@ -255,7 +257,7 @@ fun HomeScreen(
                     modifier = Modifier.staggeredEntrance(1),
                 ) {
                     if (isCrypto) {
-                        TokenAddressRow(token = selectedToken, onTokenChange = onTokenChange)
+                        TokenAddressRow(token = selectedToken, address = addressOf(selectedToken), onTokenChange = onTokenChange)
                     } else {
                         FiatAccountRow(cards = cards, selected = primaryCard, onSelect = onPrimaryCardChange)
                     }
@@ -836,11 +838,14 @@ internal fun TransactionRow(
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
+            // A withdrawal waiting on the bank shows "Pending" until it settles.
+            val isPending = transaction.status == "PENDING"
             Text(
-                text = relativeTime(transaction.timestamp),
+                text = if (isPending) "Pending" else relativeTime(transaction.timestamp),
                 style = TrimmedText,
-                color = LocalWalletColors.current.contentSecondary,
+                color = if (isPending) PendingAmber else LocalWalletColors.current.contentSecondary,
                 fontSize = 12.sp,
+                fontWeight = if (isPending) FontWeight.SemiBold else null,
             )
         }
     }
@@ -850,6 +855,7 @@ internal fun TransactionRow(
 @Composable
 private fun TokenAddressRow(
     token: CryptoToken,
+    address: String,
     onTokenChange: (CryptoToken) -> Unit,
 ) {
     val colors = LocalWalletColors.current
@@ -878,7 +884,7 @@ private fun TokenAddressRow(
                 .weight(1f, fill = false)
                 .bounceClick(pressedScale = 0.97f) {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("${token.symbol} address", token.address))
+                    clipboard.setPrimaryClip(ClipData.newPlainText("${token.symbol} address", address))
                     showCopied = true
                 },
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -896,7 +902,7 @@ private fun TokenAddressRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = if (showCopied) "Copied" else token.shortAddress(),
+                    text = if (showCopied) "Copied" else shortAddress(address),
                     color = colors.content,
                     fontFamily = InterFontFamily,
                     fontSize = 14.sp,
@@ -963,6 +969,9 @@ private val SheetSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 420f)
 
 /** Space around the balance figure for its hide/show blur to spread into (the 14dp blur needs ~2x). */
 private val BlurBleed = 16.dp
+
+/** "Pending" on transactions still settling; readable on both the light and dark palettes. */
+internal val PendingAmber = Color(0xFFE39B1B)
 
 private data class ExtraAction(
     val label: String,

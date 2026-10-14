@@ -53,7 +53,7 @@ data class PaymentMethod(
     val topUpFeeRate: BigDecimal get() = if (type == PaymentMethodType.Card) BigDecimal("0.015") else BigDecimal.ZERO
 
     /** How long money takes to arrive from (top-up) or at (withdrawal) this method. */
-    val eta: String get() = if (type == PaymentMethodType.Card) "Instant" else "Within 1 hour"
+    val eta: String get() = if (type == PaymentMethodType.Card) "Instant" else "About 5 minutes"
 }
 
 enum class CardBrand(

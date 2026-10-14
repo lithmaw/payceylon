@@ -98,6 +98,9 @@ enum class Asset(val code: String, val displayName: String, val token: CryptoTok
 /** Shortens an address to its first and last characters, e.g. "TQn9Y2…KcbLSE". */
 fun CryptoToken.shortAddress(): String = "${address.take(6)}\u2026${address.takeLast(6)}"
 
+/** Same, for any address string (e.g. the per-user address from the server). */
+fun shortAddress(address: String): String = "${address.take(6)}…${address.takeLast(6)}"
+
 data class PayCeylonUser(val name: String, val handle: String) {
     val initials: String
         get() = name.split(' ').filter { it.isNotBlank() }.take(2)
@@ -252,6 +255,11 @@ class WalletViewModel(
 
     private val balances = mutableStateOf(Asset.entries.associateWith { BigDecimal.ZERO })
 
+    private val addresses = mutableStateOf<Map<CryptoToken, String>>(emptyMap())
+
+    /** This user's deposit address for [token]; the example address until the server's arrives. */
+    fun addressOf(token: CryptoToken): String = addresses.value[token] ?: token.address
+
     var selectedWallet by mutableStateOf(WalletType.Fiat)
 
     var selectedToken by mutableStateOf(CryptoToken.USDT)
@@ -300,6 +308,11 @@ class WalletViewModel(
             try {
                 val profile = backend.verify()
                 account.load(profile)
+                // Addresses never change for a user, so once per sign-in is enough.
+                try {
+                    addresses.value = backend.addresses()
+                } catch (_: ApiException) {
+                }
                 refresh()
                 session = if (profile.name == PlaceholderProfileName) SessionState.NeedsProfile else SessionState.SignedIn
             } catch (e: ApiException) {
@@ -328,6 +341,7 @@ class WalletViewModel(
 
     private fun showSnapshot(snapshot: WalletSnapshot) {
         account.restore(snapshot)
+        addresses.value = snapshot.addresses
         balances.value = Asset.entries.associateWith { snapshot.balances[it] ?: BigDecimal.ZERO }
         transactions.clear()
         transactions.addAll(snapshot.transactions)
@@ -343,6 +357,7 @@ class WalletViewModel(
             notifications = account.notifications.toList(),
             paymentMethods = account.paymentMethods.toList(),
             settings = AccountSetting.entries.associateWith(account::isEnabled),
+            addresses = addresses.value,
         )
         if (snapshot.copy(savedAt = 0) == lastSaved?.copy(savedAt = 0)) return
         cache.save(snapshot)
@@ -471,6 +486,7 @@ class WalletViewModel(
     private fun signOutLocally() {
         backend.clearSession()
         balances.value = Asset.entries.associateWith { BigDecimal.ZERO }
+        addresses.value = emptyMap()
         transactions.clear()
         account.clear()
         selectedWallet = WalletType.Fiat

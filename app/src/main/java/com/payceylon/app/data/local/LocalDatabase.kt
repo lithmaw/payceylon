@@ -86,6 +86,13 @@ data class SettingEntity(
     val enabled: Boolean,
 )
 
+@Entity(tableName = "addresses")
+data class AddressEntity(
+    /** Token symbol, e.g. "USDT". */
+    @PrimaryKey val token: String,
+    val address: String,
+)
+
 @Dao
 interface WalletDao {
     @Query("SELECT * FROM profile WHERE id = 0")
@@ -105,6 +112,15 @@ interface WalletDao {
 
     @Query("SELECT * FROM settings")
     suspend fun settings(): List<SettingEntity>
+
+    @Query("SELECT * FROM addresses")
+    suspend fun addresses(): List<AddressEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAddresses(addresses: List<AddressEntity>)
+
+    @Query("DELETE FROM addresses")
+    suspend fun deleteAddresses()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProfile(profile: ProfileEntity)
@@ -151,6 +167,7 @@ interface WalletDao {
         deleteNotifications()
         deletePaymentMethods()
         deleteSettings()
+        deleteAddresses()
     }
 
     /** Swaps in a complete new snapshot atomically, so a reader never sees half of one. */
@@ -162,6 +179,7 @@ interface WalletDao {
         notifications: List<NotificationEntity>,
         methods: List<PaymentMethodEntity>,
         settings: List<SettingEntity>,
+        addresses: List<AddressEntity>,
     ) {
         clearAll()
         insertProfile(profile)
@@ -170,6 +188,7 @@ interface WalletDao {
         insertNotifications(notifications)
         insertPaymentMethods(methods)
         insertSettings(settings)
+        insertAddresses(addresses)
     }
 }
 
@@ -181,8 +200,10 @@ interface WalletDao {
         NotificationEntity::class,
         PaymentMethodEntity::class,
         SettingEntity::class,
+        AddressEntity::class,
     ],
-    version = 1,
+    // 2: added addresses. As a cache it is rebuilt from the server on upgrade.
+    version = 2,
     exportSchema = false,
 )
 abstract class PayCeylonDatabase : RoomDatabase() {

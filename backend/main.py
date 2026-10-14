@@ -1,3 +1,5 @@
+import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -82,6 +84,8 @@ class Settings(BaseSettings):
     # Development mode trusts the Auth emulator, which accepts unsigned tokens, so it must be opted into.
     app_env: str = "production"
     cors_origins: str = "http://10.0.2.2:8080,http://localhost:8080"
+    # How long a withdrawal stays PENDING before the (simulated) bank confirms it.
+    withdrawal_settle_seconds: int = 300
 
 
 settings = Settings()
@@ -466,8 +470,44 @@ async def lifespan(application: FastAPI):
     async with pool.acquire() as conn:
         await conn.execute(schema)
     application.state.pool = pool
+
+    async def settle_forever() -> None:
+        # Runs even when nobody has the app open, so the notification is waiting for them.
+        while True:
+            try:
+                await settle_withdrawals(pool)
+            except Exception:
+                logging.getLogger("payceylon").exception("Settling withdrawals failed")
+            await asyncio.sleep(15)
+
+    settler = asyncio.create_task(settle_forever())
     yield
+    settler.cancel()
     await pool.close()
+
+
+def settle_minutes() -> str:
+    minutes = max(1, round(settings.withdrawal_settle_seconds / 60))
+    return f"{minutes} minute" + ("" if minutes == 1 else "s")
+
+
+async def settle_withdrawals(pool: asyncpg.Pool) -> int:
+    """Completes withdrawals older than the settle time (a stand-in for the bank confirming)."""
+    async with pool.acquire() as conn, conn.transaction():
+        settled = await conn.fetch(
+            """UPDATE transactions SET status='COMPLETED'
+            WHERE direction='WITHDRAWAL' AND status='PENDING'
+            AND created_at <= now() - $1::int * interval '1 second'
+            RETURNING id, user_id, amount, counterparty_name""",
+            settings.withdrawal_settle_seconds,
+        )
+        for row in settled:
+            await emit_notice(
+                conn, row["user_id"], "TRANSACTION", "Withdrawal complete",
+                f"LKR {money(row['amount'], 'LKR')} arrived at {row['counterparty_name']}. No real transfer was made.",
+                row["id"],
+            )
+    return len(settled)
 
 
 app = FastAPI(title="PayCeylon API", version="1.0.0", lifespan=lifespan)
@@ -660,11 +700,36 @@ async def balances(user: User) -> dict[str, dict[str, str]]:
     return {"balances": {row["asset"]: money(row["balance"], row["asset"]) for row in rows}}
 
 
+BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+
+def demo_address(user_id: UUID, asset: str) -> str:
+    """A per-user address in the token's real format, derived from the user id.
+
+    Demo only: no key pair exists behind it, so real crypto sent here would be lost.
+    """
+    digest = hashlib.sha256(f"payceylon-demo:{user_id}:{asset}".encode()).digest()
+    number = int.from_bytes(digest + hashlib.sha256(digest).digest(), "big")
+
+    def encode(alphabet: str, length: int) -> str:
+        chars, rest = [], number
+        for _ in range(length):
+            rest, index = divmod(rest, len(alphabet))
+            chars.append(alphabet[index])
+        return "".join(chars)
+
+    return {
+        "USDT": lambda: "T" + encode(BASE58, 33),  # TRC-20 (Tron)
+        "BTC": lambda: "bc1q" + encode(BECH32, 38),  # native SegWit
+        "ETH": lambda: "0x" + digest.hex()[:40],
+        "SOL": lambda: encode(BASE58, 44),
+    }[asset]()
+
+
 @app.get("/v1/wallet/addresses")
 async def addresses(user: User) -> dict[str, str]:
-    # Deterministic demo addresses, not blockchain deposit accounts.
-    suffix = str(user["id"]).replace("-", "")[:12]
-    return {"USDT": f"DEMO-USDT-{suffix}", "BTC": f"DEMO-BTC-{suffix}", "ETH": f"DEMO-ETH-{suffix}", "SOL": f"DEMO-SOL-{suffix}"}
+    return {asset: demo_address(user["id"], asset) for asset in ("USDT", "BTC", "ETH", "SOL")}
 
 
 @app.get("/v1/wallet/summary")
@@ -939,11 +1004,18 @@ async def add_bank(body: BankBody, user: User) -> dict[str, Any]:
 
 @app.delete("/v1/payment-methods/{method_id}", status_code=204)
 async def delete_payment_method(method_id: UUID, user: User) -> None:
-    result = await app.state.pool.execute(
-        "DELETE FROM payment_methods WHERE id=$1 AND user_id=$2", method_id, user["id"],
-    )
-    if result.endswith("0"):
-        raise problem(404, "PAYMENT_METHOD_NOT_FOUND", "Payment method not found.")
+    async with app.state.pool.acquire() as conn, conn.transaction():
+        removed = await conn.fetchrow(
+            "DELETE FROM payment_methods WHERE id=$1 AND user_id=$2 RETURNING type,name,last4",
+            method_id, user["id"],
+        )
+        if removed is None:
+            raise problem(404, "PAYMENT_METHOD_NOT_FOUND", "Payment method not found.")
+        kind = "Card" if removed["type"] == "CARD" else "Bank account"
+        await emit_notice(
+            conn, user["id"], "SECURITY", f"{kind} removed",
+            f"{removed['name']} •••• {removed['last4'].strip()} is no longer linked.",
+        )
 
 
 @app.post("/v1/topups", status_code=201)
@@ -1007,12 +1079,16 @@ async def withdraw(
             "UPDATE wallet_balances SET balance=balance-$2 WHERE user_id=$1 AND asset='LKR'",
             user["id"], value + fee,
         )
+        # Starts PENDING like a bank transfer; settle_withdrawals() completes it later.
         tx = await add_transaction(
             conn, user_id=user["id"], direction="WITHDRAWAL", currency="LKR", value=value,
             wallet="FIAT", name=method["name"], handle=f"•••• {method['last4'].strip()}",
-            fee=fee, fee_currency="LKR", status="COMPLETED",
+            fee=fee, fee_currency="LKR", status="PENDING",
         )
-        await emit_notice(conn, user["id"], "TRANSACTION", "Demo withdrawal complete", f"LKR {value} sent to {method['name']}. No real transfer was made.", tx["id"])
+        await emit_notice(
+            conn, user["id"], "TRANSACTION", "Withdrawal on its way",
+            f"LKR {money(value, 'LKR')} to {method['name']}. Arrives in about {settle_minutes()}.", tx["id"],
+        )
         result = await transaction_json(conn, tx)
         await save_response(conn, user["id"], "withdrawal", idempotency_key or "", result)
     return result

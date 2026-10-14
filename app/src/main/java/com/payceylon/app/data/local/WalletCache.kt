@@ -8,6 +8,7 @@ import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.PaymentMethodType
 import com.payceylon.app.ui.account.UserProfile
 import com.payceylon.app.ui.wallet.Asset
+import com.payceylon.app.ui.wallet.CryptoToken
 import com.payceylon.app.ui.wallet.TransactionDirection
 import com.payceylon.app.ui.wallet.WalletTransaction
 import com.payceylon.app.ui.wallet.WalletType
@@ -23,6 +24,8 @@ data class WalletSnapshot(
     val notifications: List<AppNotification>,
     val paymentMethods: List<PaymentMethod>,
     val settings: Map<AccountSetting, Boolean>,
+    /** Per-user deposit addresses; empty until first loaded. */
+    val addresses: Map<CryptoToken, String> = emptyMap(),
     val savedAt: Long = System.currentTimeMillis(),
 )
 
@@ -46,6 +49,9 @@ class RoomWalletCache(private val dao: WalletDao) : WalletCache {
             settings = dao.settings().mapNotNull { row ->
                 AccountSetting.entries.firstOrNull { it.name == row.key }?.let { it to row.enabled }
             }.toMap(),
+            addresses = dao.addresses().mapNotNull { row ->
+                CryptoToken.entries.firstOrNull { it.symbol == row.token }?.let { it to row.address }
+            }.toMap(),
             savedAt = profile.savedAt,
         )
     }
@@ -67,6 +73,7 @@ class RoomWalletCache(private val dao: WalletDao) : WalletCache {
             notifications = snapshot.notifications.map { it.toEntity() },
             methods = snapshot.paymentMethods.mapIndexed { index, method -> method.toEntity(index) },
             settings = snapshot.settings.map { (setting, enabled) -> SettingEntity(setting.name, enabled) },
+            addresses = snapshot.addresses.map { (token, address) -> AddressEntity(token.symbol, address) },
         )
     }
 
