@@ -13,6 +13,7 @@ import com.payceylon.app.data.AppServices
 import com.payceylon.app.data.Backend
 import com.payceylon.app.ui.account.AccountState
 import com.payceylon.app.ui.account.PaymentMethod
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -290,6 +291,11 @@ class WalletViewModel(private val backend: Backend = AppServices.backend) : View
                 } else {
                     session = SessionState.Unreachable(e.message)
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A bug or malformed response must not crash the app; offer a retry instead.
+                session = SessionState.Unreachable("Something went wrong (${e.javaClass.simpleName}). Please try again.")
             }
         }
     }

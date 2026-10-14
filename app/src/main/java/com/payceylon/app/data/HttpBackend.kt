@@ -14,7 +14,9 @@ import com.payceylon.app.ui.wallet.PayCeylonUser
 import com.payceylon.app.ui.wallet.TransactionDirection
 import com.payceylon.app.ui.wallet.WalletTransaction
 import com.payceylon.app.ui.wallet.WalletType
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -69,7 +71,7 @@ class HttpBackend(baseUrl: String) : Backend {
     // --- Auth & profile -------------------------------------------------------------------
 
     override suspend fun verify(): UserProfile =
-        post<VerifyResponse>("v1/auth/verify", IdTokenRequest(idToken(forceRefresh = false)), authenticated = false).user.toProfile()
+        post<VerifyResponse>("v1/auth/verify", jsonBody(IdTokenRequest(idToken(forceRefresh = false))), authenticated = false).user.toProfile()
 
     override suspend fun me(): UserProfile = get<ProfileDto>("v1/me").toProfile()
 
@@ -101,9 +103,8 @@ class HttpBackend(baseUrl: String) : Backend {
 
     override suspend fun removePhoto(): UserProfile = send<ProfileDto>("DELETE", "v1/me/photo").toProfile()
 
-    override suspend fun downloadPhoto(url: String): ByteArray {
-        val response = execute(Request.Builder().url(url).build())
-        return response.use { it.body?.bytes() ?: ByteArray(0) }
+    override suspend fun downloadPhoto(url: String): ByteArray = withContext(Dispatchers.IO) {
+        execute(Request.Builder().url(url).build()).use { it.body?.bytes() ?: ByteArray(0) }
     }
 
     override suspend fun isHandleAvailable(handle: String): Boolean =
@@ -133,21 +134,21 @@ class HttpBackend(baseUrl: String) : Backend {
     override suspend fun send(toHandle: String, amount: BigDecimal, asset: Asset, idempotencyKey: String): WalletTransaction =
         post<TransactionDto>(
             "v1/payments",
-            PaymentBody(toHandle, amount.toPlainString(), asset.code),
+            jsonBody(PaymentBody(toHandle, amount.toPlainString(), asset.code)),
             idempotencyKey = idempotencyKey,
         ).toTransaction()
 
     override suspend fun swap(from: Asset, to: Asset, amount: BigDecimal, idempotencyKey: String): WalletTransaction {
-        val quote = post<SwapQuoteDto>("v1/swaps/quote", SwapQuoteBody(from.code, to.code, amount.toPlainString()))
-        return post<TransactionDto>("v1/swaps", SwapBody(quote.quoteId), idempotencyKey = idempotencyKey).toTransaction()
+        val quote = post<SwapQuoteDto>("v1/swaps/quote", jsonBody(SwapQuoteBody(from.code, to.code, amount.toPlainString())))
+        return post<TransactionDto>("v1/swaps", jsonBody(SwapBody(quote.quoteId)), idempotencyKey = idempotencyKey).toTransaction()
     }
 
     override suspend fun topUp(amount: BigDecimal, methodId: String, idempotencyKey: String): WalletTransaction =
-        post<TransactionDto>("v1/topups", FundsBody(amount.toPlainString(), methodId), idempotencyKey = idempotencyKey)
+        post<TransactionDto>("v1/topups", jsonBody(FundsBody(amount.toPlainString(), methodId)), idempotencyKey = idempotencyKey)
             .toTransaction()
 
     override suspend fun withdraw(amount: BigDecimal, bankId: String, idempotencyKey: String): WalletTransaction =
-        post<TransactionDto>("v1/withdrawals", FundsBody(amount.toPlainString(), bankId), idempotencyKey = idempotencyKey)
+        post<TransactionDto>("v1/withdrawals", jsonBody(FundsBody(amount.toPlainString(), bankId)), idempotencyKey = idempotencyKey)
             .toTransaction()
 
     // --- Payment methods ------------------------------------------------------------------
@@ -156,12 +157,12 @@ class HttpBackend(baseUrl: String) : Backend {
         get<PaymentMethodsResponse>("v1/payment-methods").items.map { it.toPaymentMethod() }
 
     override suspend fun addCard(token: String, holder: String, brand: String, last4: String, expiry: String): PaymentMethod =
-        post<PaymentMethodDto>("v1/payment-methods/cards", CardBody(token, holder, brand, last4, expiry)).toPaymentMethod()
+        post<PaymentMethodDto>("v1/payment-methods/cards", jsonBody(CardBody(token, holder, brand, last4, expiry))).toPaymentMethod()
 
     override suspend fun addBank(bank: String, accountNumber: String, holder: String, savings: Boolean): PaymentMethod =
         post<PaymentMethodDto>(
             "v1/payment-methods/banks",
-            BankBody(bank, accountNumber, holder, if (savings) "SAVINGS" else "CURRENT"),
+            jsonBody(BankBody(bank, accountNumber, holder, if (savings) "SAVINGS" else "CURRENT")),
         ).toPaymentMethod()
 
     override suspend fun removePaymentMethod(id: String) {
@@ -188,10 +189,10 @@ class HttpBackend(baseUrl: String) : Backend {
 
     private suspend inline fun <reified T> post(
         path: String,
-        body: Any,
+        body: RequestBody,
         idempotencyKey: String? = null,
         authenticated: Boolean = true,
-    ): T = send("POST", path, jsonBody(body), idempotencyKey = idempotencyKey, authenticated = authenticated)
+    ): T = send("POST", path, body, idempotencyKey = idempotencyKey, authenticated = authenticated)
 
     private suspend inline fun <reified T> send(
         method: String,
@@ -213,7 +214,8 @@ class HttpBackend(baseUrl: String) : Backend {
         query: List<Pair<String, String>>,
         idempotencyKey: String?,
         authenticated: Boolean,
-    ): String {
+    ): String = withContext(Dispatchers.IO) {
+        // Reading a response body is blocking I/O, which Android forbids on the main thread.
         val url = base.newBuilder().addPathSegments(path).apply {
             query.forEach { (key, value) -> addQueryParameter(key, value) }
         }.build()
@@ -223,7 +225,7 @@ class HttpBackend(baseUrl: String) : Backend {
             response.close()
             response = execute(buildRequest(url, method, body, idempotencyKey, authenticated, forceRefresh = true))
         }
-        return response.use {
+        response.use {
             val text = it.body?.string().orEmpty()
             if (!it.isSuccessful) throw it.toApiException(text)
             text

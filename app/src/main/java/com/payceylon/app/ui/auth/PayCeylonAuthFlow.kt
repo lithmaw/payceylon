@@ -109,6 +109,10 @@ fun PayCeylonAuthFlow(onAuthenticated: () -> Unit) {
                             null
                         } catch (e: ApiException) {
                             e.message
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            "Something went wrong. Please try again."
                         }
                     }
                 },

@@ -3,6 +3,7 @@ package com.payceylon.app.ui.auth
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Animatable
@@ -161,8 +162,11 @@ fun OnboardingScreen(
         }
     }
 
-    // While the keyboard is up (phone entry) the illustration folds away so the field stays visible.
-    val isKeyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    // While the keyboard is up (phone entry) the illustration folds away so the field stays visible,
+    // and the background rises with the content so its red top doesn't run into the title.
+    // The IME inset animates with the keyboard, so both follow it frame by frame.
+    val keyboardHeight = WindowInsets.ime.getBottom(LocalDensity.current)
+    val isKeyboardOpen = keyboardHeight > 0
     val isPhonePage = displayedPage == onboardingPages.lastIndex
 
     val draggableState = rememberDraggableState { delta ->
@@ -172,7 +176,10 @@ fun OnboardingScreen(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        AnimatedOnboardingBackground(pageIndex = displayedPage)
+        AnimatedOnboardingBackground(
+            pageIndex = displayedPage,
+            liftPx = if (isPhonePage) keyboardHeight.toFloat() else 0f,
+        )
 
         Column(
             modifier = Modifier
@@ -183,7 +190,8 @@ fun OnboardingScreen(
                 .padding(horizontal = 24.dp),
         ) {
             Spacer(Modifier.height(20.dp))
-            ProgressIndicator(currentPage = displayedPage)
+            // The red background has moved up out of the way, so the bars switch to ink.
+            ProgressIndicator(currentPage = displayedPage, onLight = isPhonePage && isKeyboardOpen)
 
             OnboardingCenterContent(
                 pageIndex = displayedPage,
@@ -245,7 +253,7 @@ fun OnboardingScreen(
 }
 
 @Composable
-private fun AnimatedOnboardingBackground(pageIndex: Int) {
+private fun AnimatedOnboardingBackground(pageIndex: Int, liftPx: Float = 0f) {
     var activePage by remember { mutableIntStateOf(pageIndex) }
     var previousPage by remember { mutableStateOf<Int?>(null) }
     val progress = remember { Animatable(1f) }
@@ -263,7 +271,8 @@ private fun AnimatedOnboardingBackground(pageIndex: Int) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White),
+            .background(Color.White)
+            .graphicsLayer { translationY = -liftPx },
     ) {
         val previous = previousPage
         if (previous == null) {
@@ -417,9 +426,10 @@ private fun KeyedRevealElement(
 }
 
 @Composable
-private fun ProgressIndicator(currentPage: Int) {
+private fun ProgressIndicator(currentPage: Int, onLight: Boolean) {
     var animateProgress by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { animateProgress = true }
+    val barColor by animateColorAsState(if (onLight) Ink else Color.White, tween(220), label = "progress bar color")
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -436,13 +446,13 @@ private fun ProgressIndicator(currentPage: Int) {
                     .weight(1f)
                     .height(4.dp)
                     .clip(RoundedCornerShape(99.dp))
-                    .background(Color.White.copy(alpha = 0.28f)),
+                    .background(barColor.copy(alpha = if (onLight) 0.12f else 0.28f)),
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(progress)
                         .height(4.dp)
-                        .background(Color.White, RoundedCornerShape(99.dp)),
+                        .background(barColor, RoundedCornerShape(99.dp)),
                 )
             }
         }

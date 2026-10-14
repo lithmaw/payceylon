@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.payceylon.app.data.ApiException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -33,6 +34,10 @@ class SubmitState internal constructor(private val scope: CoroutineScope, privat
                 action()
             } catch (e: ApiException) {
                 showError(context, e.message)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showError(context, "Something went wrong. Please try again.")
             } finally {
                 busy = false
             }
