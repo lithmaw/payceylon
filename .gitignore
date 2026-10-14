@@ -20,3 +20,10 @@ local.properties
 *.jks
 *.keystore
 keystore.properties
+
+# Python backend
+__pycache__/
+*.pyc
+.venv/
+backend/.env
+firebase-debug.log

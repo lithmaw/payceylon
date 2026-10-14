@@ -59,6 +59,50 @@ class RequestModelTests(unittest.TestCase):
         settings = SettingsPatch.model_validate({"biometricApproval": True, "hideBalance": False})
         self.assertTrue(settings.biometric_approval)
 
+    def test_explicit_nulls_are_rejected(self):
+        from pydantic import ValidationError
+        from backend.main import ProfilePatch, SettingsPatch
+        for model, body in ((SettingsPatch, {"hideBalance": None}), (ProfilePatch, {"name": None})):
+            with self.subTest(body=body), self.assertRaises(ValidationError):
+                model.model_validate(body)
+
+    def test_empty_or_null_email_clears_it(self):
+        from backend.main import ProfilePatch
+        for value in ("", None):
+            with self.subTest(value=value):
+                self.assertEqual(ProfilePatch.model_validate({"email": value}).model_dump(exclude_unset=True), {"email": None})
+
+
+class FormattingTests(unittest.TestCase):
+    def test_money_uses_asset_decimals(self):
+        from backend.main import money
+        self.assertEqual(money(Decimal("100.00000000"), "LKR"), "100.00")
+        self.assertEqual(money(Decimal("0.04215000"), "BTC"), "0.042150")
+
+    def test_money_never_drops_precision(self):
+        from backend.main import money
+        self.assertEqual(money(Decimal("0.00000500"), "SOL"), "0.000005")
+        self.assertEqual(money(Decimal("100000"), None), "100000")
+
+    def test_cursor_round_trip_keeps_microseconds(self):
+        from datetime import datetime, timezone
+        from uuid import uuid4
+        from backend.main import decode_cursor, encode_cursor
+        row = {"created_at": datetime(2026, 10, 14, 5, 6, 7, 123457, tzinfo=timezone.utc), "id": uuid4()}
+        self.assertEqual(decode_cursor(encode_cursor(row)), (row["created_at"], row["id"]))
+
+    def test_bad_cursor_is_rejected(self):
+        from backend.main import decode_cursor
+        for cursor in ("1759460000000", "abc_def"):
+            with self.subTest(cursor=cursor), self.assertRaises(HTTPException):
+                decode_cursor(cursor)
+
+    def test_image_type_reads_file_signature(self):
+        from backend.main import image_type
+        self.assertEqual(image_type(b"\xff\xd8\xff\xe0rest"), "image/jpeg")
+        self.assertEqual(image_type(b"RIFF\x00\x00\x00\x00WEBPVP8 "), "image/webp")
+        self.assertIsNone(image_type(b"<svg></svg>"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- Requires PostgreSQL 13+ (gen_random_uuid() is built in).
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -8,10 +8,40 @@ CREATE TABLE IF NOT EXISTS users (
     handle TEXT NOT NULL UNIQUE,
     email TEXT,
     photo_url TEXT,
-    photo_data TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS user_photos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL,
+    data BYTEA NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_id UUID REFERENCES user_photos(id) ON DELETE SET NULL;
+
+-- Migration: photos used to be stored inline as base64 data URIs in users.photo_data.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = 'photo_data'
+    ) THEN
+        WITH moved AS (
+            INSERT INTO user_photos(user_id, content_type, data)
+            SELECT id, substring(photo_data FROM '^data:([^;]+);'), decode(split_part(photo_data, ',', 2), 'base64')
+            FROM users WHERE photo_data LIKE 'data:%;base64,%'
+            RETURNING id, user_id
+        )
+        UPDATE users SET photo_id = moved.id FROM moved WHERE users.id = moved.user_id;
+        ALTER TABLE users DROP COLUMN photo_data;
+    END IF;
+END $$;
+
+-- Migration: demo peers used real-looking +94770… numbers that a real sign-up could claim.
+UPDATE users SET phone = 'demo:' || handle
+WHERE firebase_uid LIKE 'demo-peer:%' AND phone NOT LIKE 'demo:%';
 
 CREATE TABLE IF NOT EXISTS wallet_balances (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

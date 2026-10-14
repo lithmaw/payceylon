@@ -8,9 +8,10 @@ bank or blockchain transfer is made.
 
 ## Start locally
 
-1. Install PostgreSQL and create a database/user matching `DATABASE_URL` in `.env.example`.
-   Copy that file to `.env` if you need to change the defaults. No Firebase service account is
-   needed for the Auth emulator.
+1. Install PostgreSQL 13+ and create a database/user matching `DATABASE_URL` in `.env.example`.
+   Copy that file to `backend/.env`. This step is required: it sets `APP_ENV=development`, the
+   only mode that trusts the Auth emulator (the default is `production`). No Firebase service
+   account is needed for the Auth emulator.
 2. From the repository root, start the Firebase Auth emulator with Firebase CLI:
 
    ```powershell
@@ -44,11 +45,15 @@ transactions, user search, peer payments, swaps, simulated top-ups/withdrawals, 
 settings, and notifications. It uses parameterized `asyncpg` SQL directly; no ORM or migrations
 framework is required. Schema changes belong in `schema.sql`.
 
-Run focused backend tests from the repository root:
+Run backend tests from the repository root:
 
 ```powershell
-py -m unittest backend.test_main -v
+py -m unittest discover -s backend -t . -v
 ```
+
+`test_api.py` runs every endpoint against a real PostgreSQL with Firebase faked. It needs an
+empty, disposable database in `TEST_DATABASE_URL` (its tables are dropped), or `pip install
+pgserver` for an embedded one; without either it is skipped.
 
 **Do not use this demo for real money or real card/account credentials.** Demo balances, rates,
 addresses, card tokens, and external-fund actions are fictitious. A real deployment needs a
