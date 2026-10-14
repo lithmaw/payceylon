@@ -19,6 +19,6 @@ class PayCeylonApplication : Application() {
                     .build(),
             )
         }
-        AppServices.init(BuildConfig.API_BASE_URL)
+        AppServices.init(this, BuildConfig.API_BASE_URL)
     }
 }

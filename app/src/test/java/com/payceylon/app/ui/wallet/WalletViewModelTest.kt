@@ -2,6 +2,8 @@ package com.payceylon.app.ui.wallet
 
 import com.payceylon.app.data.ApiException
 import com.payceylon.app.data.FakeBackend
+import com.payceylon.app.data.FakeWalletCache
+import com.payceylon.app.data.local.WalletSnapshot
 import com.payceylon.app.ui.account.AccountSetting
 import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.PaymentMethodType
@@ -25,6 +27,7 @@ import java.math.BigDecimal
 @OptIn(ExperimentalCoroutinesApi::class)
 class WalletViewModelTest {
     private val backend = FakeBackend()
+    private val cache = FakeWalletCache()
 
     @Before
     fun setUp() {
@@ -36,20 +39,20 @@ class WalletViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun signedIn(): WalletViewModel = WalletViewModel(backend).also {
+    private fun signedIn(): WalletViewModel = WalletViewModel(backend, cache).also {
         assertEquals(SessionState.SignedIn, it.session)
     }
 
     @Test
     fun withoutAFirebaseUserTheAppStartsSignedOut() {
         backend.signedIn = false
-        assertEquals(SessionState.SignedOut, WalletViewModel(backend).session)
+        assertEquals(SessionState.SignedOut, WalletViewModel(backend, cache).session)
     }
 
     @Test
     fun aNewAccountPicksANameBeforeTheWallet() = runTest {
         backend.profile = backend.profile.copy(name = PlaceholderProfileName, handle = "pc1a2b3c4d5e")
-        val wallet = WalletViewModel(backend)
+        val wallet = WalletViewModel(backend, cache)
         assertEquals(SessionState.NeedsProfile, wallet.session)
 
         assertEquals("That username is already in use.", wallet.completeProfile("Kasun Perera", "nimal"))
@@ -74,7 +77,7 @@ class WalletViewModelTest {
     @Test
     fun anUnreachableServerOffersRetry() {
         backend.failNext = ApiException(0, ApiException.NetworkErrorCode, "Can't reach PayCeylon.")
-        val wallet = WalletViewModel(backend)
+        val wallet = WalletViewModel(backend, cache)
         assertEquals(SessionState.Unreachable("Can't reach PayCeylon."), wallet.session)
         wallet.restoreSession()
         assertEquals(SessionState.SignedIn, wallet.session)
@@ -83,7 +86,7 @@ class WalletViewModelTest {
     @Test
     fun aRejectedSignInSignsOut() {
         backend.failNext = ApiException(401, "INVALID_OTP", "The phone verification has expired.")
-        val wallet = WalletViewModel(backend)
+        val wallet = WalletViewModel(backend, cache)
         assertEquals(SessionState.SignedOut, wallet.session)
         assertFalse(backend.signedIn)
     }
@@ -189,6 +192,77 @@ class WalletViewModelTest {
         assertEquals(SessionState.SignedOut, wallet.session)
         assertTrue(wallet.transactions.isEmpty())
         assertEquals(BigDecimal.ZERO, wallet.balanceOf(Asset.LKR))
+    }
+
+    // --- Local database (Room cache) ---------------------------------------------------------
+
+    private fun savedWallet(lkr: String) = WalletSnapshot(
+        profile = backend.profile,
+        photo = null,
+        balances = mapOf(Asset.LKR to BigDecimal(lkr)),
+        transactions = listOf(
+            WalletTransaction("old", "Nimal Silva", "nimal", TransactionDirection.Incoming, "LKR", BigDecimal("5.00"), WalletType.Fiat, 1L),
+        ),
+        notifications = emptyList(),
+        paymentMethods = emptyList(),
+        settings = mapOf(AccountSetting.HideBalance to true),
+    )
+
+    @Test
+    fun whatTheServerSendsIsSavedOnTheDevice() {
+        backend.receive("Nimal Silva", "nimal", BigDecimal("250.00"))
+        signedIn()
+        val saved = cache.snapshot!!
+        assertEquals(BigDecimal("1250.00"), saved.balances[Asset.LKR])
+        assertEquals("Receive from Nimal Silva", saved.transactions.single().title)
+        assertEquals("kasun.p", saved.profile.handle)
+    }
+
+    @Test
+    fun offlineLaunchShowsTheSavedWallet() {
+        cache.snapshot = savedWallet("777.00")
+        backend.failNext = ApiException(0, ApiException.NetworkErrorCode, "Can't reach PayCeylon.")
+        val wallet = WalletViewModel(backend, cache)
+        assertEquals(SessionState.SignedIn, wallet.session)
+        assertTrue(wallet.isOffline)
+        assertEquals(BigDecimal("777.00"), wallet.balanceOf(Asset.LKR))
+        assertEquals("old", wallet.transactions.single().id)
+        assertTrue(wallet.account.isEnabled(AccountSetting.HideBalance))
+    }
+
+    @Test
+    fun theSavedWalletIsReplacedByTheServersOnceOnline() = runTest {
+        cache.snapshot = savedWallet("777.00")
+        backend.failNext = ApiException(0, ApiException.NetworkErrorCode, "Can't reach PayCeylon.")
+        val wallet = WalletViewModel(backend, cache)
+        wallet.refreshQuietly() // the next poll reaches the server
+        assertFalse(wallet.isOffline)
+        assertEquals(BigDecimal("1000.00"), wallet.balanceOf(Asset.LKR))
+        assertEquals(BigDecimal("1000.00"), cache.snapshot!!.balances[Asset.LKR])
+    }
+
+    @Test
+    fun losingTheConnectionWhileOpenShowsTheOfflineNote() = runTest {
+        val wallet = signedIn()
+        backend.failNext = ApiException(0, ApiException.NetworkErrorCode, "Can't reach PayCeylon.")
+        wallet.refreshQuietly()
+        assertTrue(wallet.isOffline)
+        assertEquals(SessionState.SignedIn, wallet.session)
+    }
+
+    @Test
+    fun unchangedDataIsNotRewritten() = runTest {
+        val wallet = signedIn()
+        val saves = cache.saves
+        wallet.refresh()
+        assertEquals(saves, cache.saves)
+    }
+
+    @Test
+    fun signingOutWipesTheDeviceCopy() = runTest {
+        val wallet = signedIn()
+        wallet.logOut()
+        assertEquals(null, cache.snapshot)
     }
 
     @Test

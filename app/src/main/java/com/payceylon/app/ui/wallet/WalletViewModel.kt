@@ -12,6 +12,9 @@ import com.payceylon.app.R
 import com.payceylon.app.data.ApiException
 import com.payceylon.app.data.AppServices
 import com.payceylon.app.data.Backend
+import com.payceylon.app.data.local.WalletCache
+import com.payceylon.app.data.local.WalletSnapshot
+import com.payceylon.app.ui.account.AccountSetting
 import com.payceylon.app.ui.account.AccountState
 import com.payceylon.app.ui.account.PaymentMethod
 import kotlinx.coroutines.CancellationException
@@ -232,11 +235,19 @@ sealed interface SessionState {
 internal const val PlaceholderProfileName = "PayCeylon User"
 
 /**
- * The signed-in user's wallet, backed by the PayCeylon API. Screens read the snapshot held
- * here; [refresh] reloads it (the app polls while open) and every action refreshes after.
+ * The signed-in user's wallet. The PayCeylon API is the source of truth; [cache] (Room on the
+ * device) holds its last answers, so the wallet shows instantly at launch and offline.
+ * [refresh] reloads from the API (the app polls while open) and saves what it got locally.
  */
-class WalletViewModel(private val backend: Backend = AppServices.backend) : ViewModel() {
+class WalletViewModel(
+    private val backend: Backend = AppServices.backend,
+    private val cache: WalletCache = AppServices.cache,
+) : ViewModel() {
     var session by mutableStateOf<SessionState>(SessionState.Checking)
+        private set
+
+    /** True while showing saved data because the server can't be reached. */
+    var isOffline by mutableStateOf(false)
         private set
 
     private val balances = mutableStateOf(Asset.entries.associateWith { BigDecimal.ZERO })
@@ -279,27 +290,66 @@ class WalletViewModel(private val backend: Backend = AppServices.backend) : View
         }
         session = SessionState.Checking
         viewModelScope.launch {
+            // 1. Show the wallet saved on this device straight away, if there is one.
+            val saved = cache.load()?.takeIf { it.profile.name != PlaceholderProfileName }
+            if (saved != null) {
+                showSnapshot(saved)
+                session = SessionState.SignedIn
+            }
+            // 2. Then bring it up to date from the server.
             try {
                 val profile = backend.verify()
                 account.load(profile)
                 refresh()
                 session = if (profile.name == PlaceholderProfileName) SessionState.NeedsProfile else SessionState.SignedIn
             } catch (e: ApiException) {
-                if (e.status in 400..499) {
-                    // The sign-in itself was rejected (expired, revoked or not a Sri Lankan number).
-                    signOutLocally()
-                    messages.tryEmit(e.message)
-                } else {
-                    session = SessionState.Unreachable(e.message)
+                when {
+                    e.status in 400..499 -> {
+                        // The sign-in itself was rejected (expired, revoked or not a Sri Lankan number).
+                        signOutLocally()
+                        messages.tryEmit(e.message)
+                    }
+                    // Offline with a saved wallet: keep showing it; polling retries.
+                    saved != null -> isOffline = true
+                    else -> session = SessionState.Unreachable(e.message)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 // A bug or malformed response must not crash the app; offer a retry instead.
-                session = SessionState.Unreachable("Something went wrong (${e.javaClass.simpleName}). Please try again.")
+                if (saved != null) {
+                    isOffline = true
+                } else {
+                    session = SessionState.Unreachable("Something went wrong (${e.javaClass.simpleName}). Please try again.")
+                }
             }
         }
     }
+
+    private fun showSnapshot(snapshot: WalletSnapshot) {
+        account.restore(snapshot)
+        balances.value = Asset.entries.associateWith { snapshot.balances[it] ?: BigDecimal.ZERO }
+        transactions.clear()
+        transactions.addAll(snapshot.transactions)
+    }
+
+    /** Writes what's on screen to the local database (skipped when nothing changed). */
+    private suspend fun saveSnapshot() {
+        val snapshot = WalletSnapshot(
+            profile = account.profile,
+            photo = account.photoBytes,
+            balances = balances.value,
+            transactions = transactions.toList(),
+            notifications = account.notifications.toList(),
+            paymentMethods = account.paymentMethods.toList(),
+            settings = AccountSetting.entries.associateWith(account::isEnabled),
+        )
+        if (snapshot.copy(savedAt = 0) == lastSaved?.copy(savedAt = 0)) return
+        cache.save(snapshot)
+        lastSaved = snapshot
+    }
+
+    private var lastSaved: WalletSnapshot? = null
 
     /**
      * Saves what a new user entered on profile setup; returns the problem, or null. The photo is
@@ -318,26 +368,36 @@ class WalletViewModel(private val backend: Backend = AppServices.backend) : View
         return null
     }
 
-    /** Reloads balances, history and notifications. Throws [ApiException] on failure. */
-    suspend fun refresh() = coroutineScope {
-        val latestBalances = async { backend.balances() }
-        val latestTransactions = async { backend.transactions() }
-        val notifications = async { account.refreshNotifications() }
-        balances.value = Asset.entries.associateWith { latestBalances.await()[it] ?: BigDecimal.ZERO }
-        val history = latestTransactions.await()
-        if (history != transactions.toList()) {
-            transactions.clear()
-            transactions.addAll(history)
+    /**
+     * Reloads balances, history and notifications from the server and saves them on the
+     * device. Throws [ApiException] on failure.
+     */
+    suspend fun refresh() {
+        coroutineScope {
+            val latestBalances = async { backend.balances() }
+            val latestTransactions = async { backend.transactions() }
+            val notifications = async { account.refreshNotifications() }
+            balances.value = Asset.entries.associateWith { latestBalances.await()[it] ?: BigDecimal.ZERO }
+            val history = latestTransactions.await()
+            if (history != transactions.toList()) {
+                transactions.clear()
+                transactions.addAll(history)
+            }
+            notifications.await()
         }
-        notifications.await()
+        isOffline = false
+        saveSnapshot()
     }
 
-    /** [refresh] for polling: failures are ignored, except a revoked session signs out. */
+    /** [refresh] for polling: a revoked session signs out; no connection shows the offline note. */
     suspend fun refreshQuietly() {
         try {
             refresh()
         } catch (e: ApiException) {
-            if (e.isUnauthenticated) signOutLocally()
+            when {
+                e.isUnauthenticated -> signOutLocally()
+                e.isNetwork || e.status >= 500 -> isOffline = true
+            }
         }
     }
 
@@ -415,7 +475,11 @@ class WalletViewModel(private val backend: Backend = AppServices.backend) : View
         account.clear()
         selectedWallet = WalletType.Fiat
         lastShownBalance = null
+        isOffline = false
+        lastSaved = null
         session = SessionState.SignedOut
+        // Nothing of this account stays on the device after signing out.
+        viewModelScope.launch { cache.clear() }
     }
 }
 

@@ -1,5 +1,9 @@
 package com.payceylon.app.data
 
+import android.content.Context
+import com.payceylon.app.data.local.PayCeylonDatabase
+import com.payceylon.app.data.local.RoomWalletCache
+import com.payceylon.app.data.local.WalletCache
 import com.payceylon.app.ui.account.AccountSetting
 import com.payceylon.app.ui.account.AppNotification
 import com.payceylon.app.ui.account.PaymentMethod
@@ -75,7 +79,12 @@ object AppServices {
     lateinit var backend: Backend
         private set
 
-    fun init(baseUrl: String) {
+    /** The on-device Room copy of the wallet. */
+    lateinit var cache: WalletCache
+        private set
+
+    fun init(context: Context, baseUrl: String) {
         if (!::backend.isInitialized) backend = HttpBackend(baseUrl)
+        if (!::cache.isInitialized) cache = RoomWalletCache(PayCeylonDatabase.create(context).walletDao())
     }
 }

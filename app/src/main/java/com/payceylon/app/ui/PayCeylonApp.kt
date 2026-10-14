@@ -7,6 +7,19 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.payceylon.app.ui.theme.InterFontFamily
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -82,6 +95,21 @@ import com.payceylon.app.ui.wallet.WalletViewModel
 import com.payceylon.app.ui.wallet.WithdrawScreen
 import com.payceylon.app.ui.wallet.toKeypadInput
 import kotlinx.coroutines.delay
+
+/** Shown while the wallet comes from the device's local database because the server is unreachable. */
+@Composable
+private fun OfflineNotice() {
+    Text(
+        text = "Offline · showing saved data",
+        modifier = Modifier
+            .background(Color(0xE6202022), RoundedCornerShape(50))
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        color = Color.White,
+        fontFamily = InterFontFamily,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+    )
+}
 
 /** Ordered by depth so transitions can slide forward or back. */
 private enum class AppDestination {
@@ -519,6 +547,18 @@ fun PayCeylonApp(
                     onSignOut = walletViewModel::logOut,
                 )
                 else -> Unit
+            }
+
+            AnimatedVisibility(
+                visible = walletViewModel.isOffline && inWallet && session == SessionState.SignedIn,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 6.dp),
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
+            ) {
+                OfflineNotice()
             }
 
             if (locked && session != SessionState.SignedOut) {

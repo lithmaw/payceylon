@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import com.payceylon.app.R
 import com.payceylon.app.data.ApiException
 import com.payceylon.app.data.Backend
+import com.payceylon.app.data.local.WalletSnapshot
 import com.payceylon.app.ui.auth.formatSriLankanMobileNumber
 import com.payceylon.app.ui.wallet.PayCeylonUser
 import kotlinx.coroutines.CoroutineScope
@@ -178,6 +179,10 @@ class AccountState(
     var photo by mutableStateOf<ImageBitmap?>(null)
         private set
 
+    /** The encoded image behind [photo], kept so the local database can store it for offline use. */
+    var photoBytes: ByteArray? = null
+        private set
+
     val paymentMethods = mutableStateListOf<PaymentMethod>()
 
     val cards: List<PaymentMethod> get() = paymentMethods.filter { it.type == PaymentMethodType.Card }
@@ -213,9 +218,21 @@ class AccountState(
         notifications.replaceWith(feed.await())
     }
 
+    /** Shows a saved [snapshot] from the local database straight away, before the server answers. */
+    fun restore(snapshot: WalletSnapshot) {
+        profile = snapshot.profile
+        photoBytes = snapshot.photo
+        photo = snapshot.photo?.let(::decodePhoto)
+        paymentMethods.replaceWith(snapshot.paymentMethods)
+        settings.clear()
+        settings.putAll(snapshot.settings)
+        notifications.replaceWith(snapshot.notifications)
+    }
+
     fun clear() {
         profile = UserProfile(name = "", handle = "", phone = "", email = "")
         photo = null
+        photoBytes = null
         paymentMethods.clear()
         primaryCardId = null
         settings.clear()
@@ -237,13 +254,14 @@ class AccountState(
         val photoChanged = latest.photoUrl != profile.photoUrl
         profile = latest
         if (photoChanged) {
-            photo = latest.photoUrl?.let { url ->
+            photoBytes = latest.photoUrl?.let { url ->
                 try {
-                    decodePhoto(backend.downloadPhoto(url))
+                    backend.downloadPhoto(url)
                 } catch (_: ApiException) {
                     null
                 }
             }
+            photo = photoBytes?.let(::decodePhoto)
         }
     }
 
@@ -316,10 +334,12 @@ class AccountState(
 
     /** Uploads [bitmap] as the profile photo, or removes it when null. */
     suspend fun updatePhoto(bitmap: ImageBitmap?) {
-        val latest = if (bitmap == null) backend.removePhoto() else backend.uploadPhoto(encodePhoto(bitmap))
+        val bytes = bitmap?.let(::encodePhoto)
+        val latest = if (bytes == null) backend.removePhoto() else backend.uploadPhoto(bytes)
         // Show the picked image straight away instead of downloading it back.
         profile = latest
         photo = bitmap
+        photoBytes = bytes
         refreshNotificationsQuietly()
     }
 
