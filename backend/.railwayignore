@@ -1,0 +1,6 @@
+# Never upload local environments or secrets; Railway gets secrets as variables.
+.venv/
+__pycache__/
+*.pyc
+.env
+*service-account*.json
