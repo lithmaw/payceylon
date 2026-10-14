@@ -452,7 +452,9 @@ async def lifespan(application: FastAPI):
             if raw.startswith("{"):
                 account_info = json.loads(raw)
             else:
-                account_info = json.loads(Path(raw).read_text(encoding="utf-8"))
+                # Relative paths are relative to this folder, not wherever uvicorn was started.
+                key_path = Path(raw) if Path(raw).is_absolute() else Path(__file__).parent / raw
+                account_info = json.loads(key_path.read_text(encoding="utf-8"))
             firebase_admin.initialize_app(
                 credentials.Certificate(account_info),
                 {"projectId": settings.firebase_project_id},

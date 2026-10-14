@@ -2,6 +2,9 @@ package com.payceylon.app.ui.auth
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -24,7 +27,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,7 +41,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,7 +62,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -147,6 +161,10 @@ fun OnboardingScreen(
         }
     }
 
+    // While the keyboard is up (phone entry) the illustration folds away so the field stays visible.
+    val isKeyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val isPhonePage = displayedPage == onboardingPages.lastIndex
+
     val draggableState = rememberDraggableState { delta ->
         val isPastStart = displayedPage == 0 && dragOffset + delta > 0f
         val isPastEnd = displayedPage == onboardingPages.lastIndex && dragOffset + delta < 0f
@@ -161,6 +179,7 @@ fun OnboardingScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 24.dp),
         ) {
             Spacer(Modifier.height(20.dp))
@@ -170,12 +189,15 @@ fun OnboardingScreen(
                 pageIndex = displayedPage,
                 transitionDirection = transitionDirection,
                 dragOffset = dragOffset,
+                showIllustration = !(isPhonePage && isKeyboardOpen),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .draggable(
                         state = draggableState,
                         orientation = Orientation.Horizontal,
+                        // The last page holds the phone field; swiping there only got in the way.
+                        enabled = !isPhonePage,
                         onDragStopped = { velocity ->
                             val projectedOffset = dragOffset + velocity * 0.12f
                             when {
@@ -294,6 +316,7 @@ private fun OnboardingCenterContent(
     pageIndex: Int,
     transitionDirection: Int,
     dragOffset: Float,
+    showIllustration: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -304,21 +327,27 @@ private fun OnboardingCenterContent(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.Start,
     ) {
-        KeyedRevealElement(
-            pageIndex = pageIndex,
-            transitionDirection = transitionDirection,
-            delayMillis = 0,
+        AnimatedVisibility(
+            visible = showIllustration,
             modifier = Modifier.align(Alignment.CenterHorizontally),
-        ) { page ->
-            Image(
-                painter = painterResource(onboardingPages[page].illustration),
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 320.dp)
-                    .aspectRatio(1f),
-                contentScale = ContentScale.Fit,
-            )
+            enter = fadeIn(tween(200)) + expandVertically(tween(260)),
+            exit = fadeOut(tween(120)) + shrinkVertically(tween(220)),
+        ) {
+            KeyedRevealElement(
+                pageIndex = pageIndex,
+                transitionDirection = transitionDirection,
+                delayMillis = 0,
+            ) { page ->
+                Image(
+                    painter = painterResource(onboardingPages[page].illustration),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 320.dp)
+                        .aspectRatio(1f),
+                    contentScale = ContentScale.Fit,
+                )
+            }
         }
         Spacer(Modifier.height(4.dp))
         KeyedRevealElement(
@@ -447,6 +476,7 @@ private fun PhoneEntryControls(
         PhoneNumberField(
             value = value,
             onValueChange = onValueChange,
+            onDone = { if (isValid && !isSendingCode) onContinue() },
         )
         Spacer(Modifier.height(14.dp))
         PayCeylonButton(
@@ -472,17 +502,36 @@ private fun PhoneEntryControls(
 private fun PhoneNumberField(
     value: String,
     onValueChange: (String) -> Unit,
+    onDone: () -> Unit,
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Keeps the cursor where the user put it, so a mistyped digit can be fixed in place.
+    var fieldValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    val current = if (fieldValue.text == value) fieldValue else TextFieldValue(value, TextRange(value.length))
+
     BasicTextField(
-        value = value,
+        value = current,
         onValueChange = { newValue ->
-            onValueChange(normalizeSriLankanMobileNumber(newValue))
+            val digits = normalizeSriLankanMobileNumber(newValue.text)
+            fieldValue = if (digits == newValue.text) {
+                newValue
+            } else {
+                newValue.copy(text = digits, selection = TextRange(newValue.selection.end.coerceAtMost(digits.length)))
+            }
+            onValueChange(digits)
         },
         modifier = Modifier
             .fillMaxWidth()
             .height(62.dp)
             .clip(RoundedCornerShape(32.dp))
             .background(SoftGrey)
+            // Taps on the flag or +94 focus the field too, not just taps on the digits.
+            .clickable(interactionSource = null, indication = null) {
+                focusRequester.requestFocus()
+                keyboard?.show()
+            }
+            .focusRequester(focusRequester)
             .padding(horizontal = 20.dp),
         textStyle = TextStyle(
             color = Ink,
@@ -493,7 +542,8 @@ private fun PhoneNumberField(
         singleLine = true,
         visualTransformation = SriLankanPhoneVisualTransformation,
         cursorBrush = SolidColor(PayCeylonRed),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
         decorationBox = { innerTextField ->
             Row(
                 modifier = Modifier.fillMaxSize(),

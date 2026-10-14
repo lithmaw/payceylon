@@ -4,6 +4,7 @@ import android.app.Activity
 import com.google.firebase.FirebaseException
 import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.PhoneAuthCredential
@@ -91,5 +92,11 @@ private fun FirebaseException.toApiException(): ApiException = when (this) {
         }
     is FirebaseAuthUserCollisionException -> ApiException(409, "PHONE_TAKEN", "That number is already used by another account.")
     is FirebaseTooManyRequestsException -> ApiException(429, "RATE_LIMITED", "Too many attempts. Try again later.")
+    is FirebaseAuthException -> if (errorCode == "ERROR_OPERATION_NOT_ALLOWED") {
+        // Phone sign-in off, or SMS to this country blocked, in the Firebase project.
+        ApiException(403, "SMS_NOT_ALLOWED", "SMS codes can't be sent to this number yet. Please try again later.")
+    } else {
+        ApiException(0, "AUTH_FAILED", message ?: "Phone verification failed. Try again.")
+    }
     else -> ApiException(0, "AUTH_FAILED", message ?: "Phone verification failed. Try again.")
 }
