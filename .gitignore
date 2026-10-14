@@ -27,3 +27,4 @@ __pycache__/
 .venv/
 backend/.env
 firebase-debug.log
+backend/*service-account*.json
