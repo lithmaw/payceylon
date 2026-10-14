@@ -154,10 +154,11 @@ enum class AccountSetting(
     @param:DrawableRes val icon: Int,
     val default: Boolean,
 ) {
-    BiometricApproval("Biometric approval", "Confirm payments with your fingerprint", R.drawable.ic_fingerprint, true),
-    HideBalance("Hide balance", "Keep your balance hidden when the app opens", R.drawable.ic_eye_off, false),
-    TransactionAlerts("Transaction alerts", "Notify me when money moves", R.drawable.ic_bell, true),
-    Promotions("Offers & promotions", "Cashback, rewards and PayCeylon news", R.drawable.ic_gift, false),
+    // Descriptions stay short enough for one line on a phone.
+    BiometricApproval("Biometric approval", "Confirm payments with biometrics", R.drawable.ic_shield, true),
+    HideBalance("Hide balance", "Hidden when the app opens", R.drawable.ic_eye_off, false),
+    TransactionAlerts("Transaction alerts", "When money moves", R.drawable.ic_bell, true),
+    Promotions("Offers & promotions", "Cashback and rewards", R.drawable.ic_gift, false),
 }
 
 /**
@@ -282,15 +283,17 @@ class AccountState(
         return save(mapOf(field to value.ifEmpty { null }))
     }
 
-    /** Sets the name and username of a new account in one go. */
-    suspend fun setUpProfile(name: String, handle: String): String? {
+    /** Sets up a new account in one go: name and username are required, email is optional. */
+    suspend fun setUpProfile(name: String, handle: String, email: String = ""): String? {
         validateProfileField(ProfileField.Name, name)?.let { return it }
         validateProfileField(ProfileField.Username, handle)?.let { return it }
+        if (email.isNotBlank()) validateProfileField(ProfileField.Email, email)?.let { return it }
         return save(
-            mapOf(
-                ProfileField.Name to normalizeProfileValue(ProfileField.Name, name),
-                ProfileField.Username to normalizeProfileValue(ProfileField.Username, handle),
-            ),
+            buildMap {
+                put(ProfileField.Name, normalizeProfileValue(ProfileField.Name, name))
+                put(ProfileField.Username, normalizeProfileValue(ProfileField.Username, handle))
+                if (email.isNotBlank()) put(ProfileField.Email, normalizeProfileValue(ProfileField.Email, email))
+            },
         )
     }
 

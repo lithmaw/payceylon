@@ -44,17 +44,27 @@ import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
 import com.payceylon.app.ui.theme.PayCeylonPrimary
 
-/** The user's photo, or the default PayCeylon avatar. */
+/** The user's photo, or the first letter of their [name] on PayCeylon red. */
 @Composable
-internal fun ProfileAvatar(photo: ImageBitmap?, size: Dp, modifier: Modifier = Modifier) {
+internal fun ProfileAvatar(photo: ImageBitmap?, size: Dp, name: String, modifier: Modifier = Modifier) {
     val imageModifier = modifier
         .size(size)
         .clip(CircleShape)
-        .background(Color.Black)
     if (photo != null) {
         Image(bitmap = photo, contentDescription = "Profile photo", modifier = imageModifier, contentScale = ContentScale.Crop)
     } else {
-        Image(painter = painterResource(R.drawable.home_avatar), contentDescription = "Profile photo", modifier = imageModifier, contentScale = ContentScale.Crop)
+        Box(
+            modifier = imageModifier.background(PayCeylonPrimary),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = name.trim().firstOrNull()?.uppercase() ?: "",
+                color = Color.White,
+                fontFamily = InterFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = (size.value * 0.42f).sp,
+            )
+        }
     }
 }
 
@@ -161,7 +171,7 @@ internal fun SettingsRow(
                         fontFamily = InterFontFamily,
                         fontSize = 13.sp,
                         lineHeight = 17.sp,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

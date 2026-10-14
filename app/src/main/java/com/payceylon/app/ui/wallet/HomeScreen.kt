@@ -138,6 +138,8 @@ fun HomeScreen(
     onSeeAllTransactions: () -> Unit,
     /** Profile photo for the header avatar; null shows the default. */
     photo: ImageBitmap?,
+    /** Shown as an initial when there is no photo. */
+    userName: String,
     notifications: List<AppNotification>,
     onMarkAllNotificationsRead: () -> Unit,
     onNotificationClick: (AppNotification) -> Unit,
@@ -230,6 +232,7 @@ fun HomeScreen(
                     selectedWallet = selectedWallet,
                     onWalletChange = onWalletChange,
                     photo = photo,
+                    userName = userName,
                     notifications = notifications,
                     transactionFor = { id -> transactions.firstOrNull { it.id == id } },
                     onMarkAllNotificationsRead = onMarkAllNotificationsRead,
@@ -325,6 +328,7 @@ private fun WalletHeader(
     selectedWallet: WalletType,
     onWalletChange: (WalletType) -> Unit,
     photo: ImageBitmap?,
+    userName: String,
     notifications: List<AppNotification>,
     transactionFor: (String) -> WalletTransaction?,
     onMarkAllNotificationsRead: () -> Unit,
@@ -434,6 +438,7 @@ private fun WalletHeader(
             }
             ProfileAvatar(
                 photo = photo,
+                name = userName,
                 size = 40.dp,
                 modifier = Modifier.bounceClick(pressedScale = 0.9f, onClick = onProfileClick),
             )
@@ -557,7 +562,9 @@ private fun BalanceCard(
                                 },
                                 modifier = Modifier
                                     .graphicsLayer { alpha = 1f - hideProgress }
-                                    .blur((hideProgress * 14).dp, BlurredEdgeTreatment.Unbounded),
+                                    .blur((hideProgress * 14).dp, BlurredEdgeTreatment.Unbounded)
+                                    // Room inside the blur layer; without it the blur is cut at the glyph edges.
+                                    .padding(BlurBleed),
                                 color = LocalWalletColors.current.content,
                                 fontFamily = InterFontFamily,
                                 fontWeight = FontWeight.SemiBold,
@@ -571,7 +578,8 @@ private fun BalanceCard(
                                 text = "\u2022\u2022\u2022\u2022\u2022\u2022",
                                 modifier = Modifier
                                     .graphicsLayer { alpha = hideProgress }
-                                    .blur(((1f - hideProgress) * 14).dp, BlurredEdgeTreatment.Unbounded),
+                                    .blur(((1f - hideProgress) * 14).dp, BlurredEdgeTreatment.Unbounded)
+                                    .padding(BlurBleed),
                                 color = LocalWalletColors.current.content,
                                 fontFamily = InterFontFamily,
                                 fontWeight = FontWeight.SemiBold,
@@ -582,14 +590,19 @@ private fun BalanceCard(
                         }
                         },
                     ) { measurables, constraints ->
-                        val loose = constraints.copy(minWidth = 0)
+                        // Both children carry BlurBleed padding; lay out by their text size and let
+                        // the padding hang outside the slot so nothing shifts.
+                        val bleed = BlurBleed.roundToPx()
+                        val loose = constraints.copy(minWidth = 0, maxWidth = constraints.maxWidth + bleed * 2)
                         val figure = measurables[0].measure(loose)
                         val mask = measurables[1].measure(loose)
-                        val width = (figure.width + (mask.width - figure.width) * hideProgress).toInt()
-                        val height = maxOf(figure.height, mask.height)
+                        val figureWidth = figure.width - bleed * 2
+                        val maskWidth = mask.width - bleed * 2
+                        val width = (figureWidth + (maskWidth - figureWidth) * hideProgress).toInt()
+                        val height = maxOf(figure.height, mask.height) - bleed * 2
                         layout(width, height) {
-                            figure.placeRelative(0, (height - figure.height) / 2)
-                            mask.placeRelative(0, (height - mask.height) / 2)
+                            figure.placeRelative(-bleed, (height - figure.height) / 2)
+                            mask.placeRelative(-bleed, (height - mask.height) / 2)
                         }
                     }
                 }
@@ -947,6 +960,9 @@ private fun TokenAddressRow(
 }
 
 private val SheetSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 420f)
+
+/** Space around the balance figure for its hide/show blur to spread into (the 14dp blur needs ~2x). */
+private val BlurBleed = 16.dp
 
 private data class ExtraAction(
     val label: String,

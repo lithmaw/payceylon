@@ -50,6 +50,9 @@ fun SettingsScreen(
     onLegal: (LegalDocument) -> Unit,
     onHelp: () -> Unit,
     onLogOut: () -> Unit,
+    /** Device-only "unlock with biometrics" switch. */
+    appLockEnabled: Boolean,
+    onAppLockChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalWalletColors.current
@@ -84,7 +87,7 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                ProfileAvatar(account.photo, size = 44.dp)
+                ProfileAvatar(account.photo, size = 44.dp, name = profile.name)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = profile.name,
@@ -116,7 +119,7 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = R.drawable.ic_user,
                     title = "Personal details",
-                    value = "Photo, name, username, phone and email",
+                    value = "Name, photo, phone, email",
                     onClick = onEditProfile,
                 )
                 val cardCount = account.cards.size
@@ -132,6 +135,13 @@ fun SettingsScreen(
             }
 
             SettingsSection("Security", Modifier) {
+                SettingsRow(
+                    icon = R.drawable.ic_fingerprint,
+                    title = "Biometric unlock",
+                    value = "Unlock the app with biometrics",
+                    onClick = { onAppLockChange(!appLockEnabled) },
+                    trailing = { PayCeylonSwitch(checked = appLockEnabled, onCheckedChange = onAppLockChange) },
+                )
                 SettingToggleRow(account, AccountSetting.BiometricApproval)
                 SettingToggleRow(account, AccountSetting.HideBalance, showDivider = false)
             }

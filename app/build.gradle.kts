@@ -78,6 +78,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.okhttp)
+    implementation(libs.androidx.biometric)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.play.services)
     testImplementation(libs.junit)

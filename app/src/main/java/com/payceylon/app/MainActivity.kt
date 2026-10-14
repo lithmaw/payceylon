@@ -2,18 +2,19 @@ package com.payceylon.app
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.fragment.app.FragmentActivity
 import com.payceylon.app.ui.PayCeylonApp
 import com.payceylon.app.ui.theme.PayCeylonTheme
 import com.payceylon.app.ui.wallet.PaymentRequest
 import com.payceylon.app.ui.wallet.parsePaymentRequest
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (a ComponentActivity) because the system biometric prompt needs one.
+class MainActivity : FragmentActivity() {
     private var pendingPaymentLink by mutableStateOf<PaymentRequest?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {

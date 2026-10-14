@@ -33,7 +33,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.core.view.WindowCompat
+import android.os.SystemClock
+import androidx.compose.runtime.DisposableEffect
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -50,7 +54,12 @@ import com.payceylon.app.ui.account.SettingsScreen
 import com.payceylon.app.ui.auth.ConnectionProblemScreen
 import com.payceylon.app.ui.auth.PayCeylonAuthFlow
 import com.payceylon.app.ui.auth.ProfileSetupScreen
+import com.payceylon.app.ui.components.AppLockScreen
+import com.payceylon.app.ui.components.AppLockSettings
 import com.payceylon.app.ui.components.PayCeylonEasing
+import com.payceylon.app.ui.components.canLockApp
+import com.payceylon.app.ui.components.findActivity
+import com.payceylon.app.ui.components.promptForUnlock
 import com.payceylon.app.ui.components.showError
 import com.payceylon.app.ui.theme.CryptoWalletColors
 import com.payceylon.app.ui.theme.FiatWalletColors
@@ -100,7 +109,11 @@ fun PayCeylonApp(
 ) {
     val context = LocalContext.current
     val account = walletViewModel.account
-    var destination by rememberSaveable { mutableStateOf(AppDestination.Auth) }
+    // With a saved sign-in, start on Home (hidden under the loading cover) so the wallet appears
+    // without onboarding sliding past first.
+    var destination by rememberSaveable {
+        mutableStateOf(if (walletViewModel.session == SessionState.SignedOut) AppDestination.Auth else AppDestination.Home)
+    }
     var recipientHandle by rememberSaveable { mutableStateOf("") }
     // Amount and wallet carried over from a scanned or linked payment request, if it had one.
     var prefillAmount by rememberSaveable { mutableStateOf("") }
@@ -177,6 +190,44 @@ fun PayCeylonApp(
 
     LaunchedEffect(Unit) {
         walletViewModel.messages.collect { showError(context, it) }
+    }
+
+    // Biometric unlock: locks a signed-in app at launch and after 30 s in the background.
+    val appLock = remember { AppLockSettings(context) }
+    var appLockEnabled by remember { mutableStateOf(appLock.enabled) }
+    var locked by rememberSaveable { mutableStateOf(appLock.enabled && walletViewModel.session != SessionState.SignedOut) }
+    LaunchedEffect(session) { if (session == SessionState.SignedOut) locked = false }
+    DisposableEffect(lifecycleOwner) {
+        var backgroundedAt = 0L
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> backgroundedAt = SystemClock.elapsedRealtime()
+                Lifecycle.Event.ON_START ->
+                    if (appLock.enabled && backgroundedAt > 0 && SystemClock.elapsedRealtime() - backgroundedAt > 30_000) {
+                        locked = true
+                    }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun setAppLock(enable: Boolean) {
+        val activity = context.findActivity() as? FragmentActivity
+        when {
+            !enable -> {
+                appLock.enabled = false
+                appLockEnabled = false
+            }
+            !canLockApp(context) -> showError(context, "Set up a fingerprint or screen lock in your phone's settings first.")
+            activity != null -> promptForUnlock(activity, "Turn on biometric unlock") { passed ->
+                if (passed) {
+                    appLock.enabled = true
+                    appLockEnabled = true
+                }
+            }
+        }
     }
 
     val inWallet = destination != AppDestination.Auth && destination != AppDestination.ProfileSetup
@@ -283,6 +334,7 @@ fun PayCeylonApp(
                         },
                         onSeeAllTransactions = { destination = AppDestination.Transactions },
                         photo = account.photo,
+                        userName = account.profile.name,
                         notifications = account.notifications,
                         onMarkAllNotificationsRead = account::markAllRead,
                         onNotificationClick = { notification ->
@@ -371,6 +423,8 @@ fun PayCeylonApp(
                             }
                         },
                         onLogOut = walletViewModel::logOut,
+                        appLockEnabled = appLockEnabled,
+                        onAppLockChange = ::setAppLock,
                     )
 
                     AppDestination.Profile -> ProfileScreen(
@@ -465,6 +519,16 @@ fun PayCeylonApp(
                     onSignOut = walletViewModel::logOut,
                 )
                 else -> Unit
+            }
+
+            if (locked && session != SessionState.SignedOut) {
+                AppLockScreen(
+                    onUnlocked = { locked = false },
+                    onSignOut = {
+                        locked = false
+                        walletViewModel.logOut()
+                    },
+                )
             }
 
             walletSwitch?.let { target ->

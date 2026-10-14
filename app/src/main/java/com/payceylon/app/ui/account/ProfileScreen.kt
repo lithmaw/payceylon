@@ -124,6 +124,7 @@ fun ProfileScreen(
             Box(modifier = Modifier) {
                 ProfileAvatar(
                     account.photo,
+                    name = account.profile.name,
                     size = 108.dp,
                     modifier = Modifier.tap { choosePhoto() },
                 )
@@ -191,7 +192,7 @@ fun ProfileScreen(
 }
 
 /** Decodes a picked photo, downsampled to roughly avatar size. */
-private suspend fun loadProfilePhoto(context: Context, uri: Uri): ImageBitmap? = withContext(Dispatchers.IO) {
+internal suspend fun loadProfilePhoto(context: Context, uri: Uri): ImageBitmap? = withContext(Dispatchers.IO) {
     runCatching {
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

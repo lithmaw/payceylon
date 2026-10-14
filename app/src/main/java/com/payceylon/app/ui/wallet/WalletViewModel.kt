@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.payceylon.app.R
@@ -300,11 +301,21 @@ class WalletViewModel(private val backend: Backend = AppServices.backend) : View
         }
     }
 
-    /** Saves the name and username a new user picked; returns the problem, or null. */
-    suspend fun completeProfile(name: String, handle: String): String? {
-        val error = account.setUpProfile(name, handle)
-        if (error == null) session = SessionState.SignedIn
-        return error
+    /**
+     * Saves what a new user entered on profile setup; returns the problem, or null. The photo is
+     * optional and a failed upload doesn't block the account (it can be added later).
+     */
+    suspend fun completeProfile(name: String, handle: String, email: String = "", photo: ImageBitmap? = null): String? {
+        account.setUpProfile(name, handle, email)?.let { return it }
+        if (photo != null) {
+            try {
+                account.updatePhoto(photo)
+            } catch (e: ApiException) {
+                messages.tryEmit("Your photo couldn't be saved. You can add it in Settings.")
+            }
+        }
+        session = SessionState.SignedIn
+        return null
     }
 
     /** Reloads balances, history and notifications. Throws [ApiException] on failure. */
