@@ -30,11 +30,13 @@ import androidx.compose.ui.unit.sp
 import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.auth.PayCeylonButton
 import com.payceylon.app.ui.auth.PayCeylonButtonStyle
+import com.payceylon.app.ui.components.rememberSubmitState
 import com.payceylon.app.ui.components.tap
 import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
 import com.payceylon.app.ui.theme.PayCeylonPrimary
 import java.math.BigDecimal
+import java.util.UUID
 
 /**
  * Pays LKR out of the fiat wallet to a linked bank account, with the bank fee added on top.
@@ -45,8 +47,8 @@ fun WithdrawScreen(
     balance: BigDecimal,
     /** Linked bank accounts. */
     banks: List<PaymentMethod>,
-    /** Returns false when the withdrawal is rejected (e.g. insufficient funds). */
-    onWithdraw: (amount: BigDecimal, bank: PaymentMethod) -> Boolean,
+    /** Pays out; throws ApiException when rejected (e.g. insufficient funds). */
+    onWithdraw: suspend (amount: BigDecimal, bank: PaymentMethod, requestKey: String) -> Unit,
     onAddBank: () -> Unit,
     onBack: () -> Unit,
     onDone: () -> Unit,
@@ -54,6 +56,8 @@ fun WithdrawScreen(
 ) {
     val colors = LocalWalletColors.current
     val asset = Asset.LKR
+    val requestKey = rememberSaveable { UUID.randomUUID().toString() }
+    val submit = rememberSubmitState()
     var amountInput by rememberSaveable { mutableStateOf("") }
     var bankId by rememberSaveable { mutableStateOf(banks.firstOrNull()?.id) }
     var withdrawnAmount by rememberSaveable { mutableStateOf<String?>(null) }
@@ -175,11 +179,20 @@ fun WithdrawScreen(
             )
             Spacer(Modifier.height(16.dp))
             PayCeylonButton(
-                label = if (canWithdraw) "Withdraw LKR ${amount.toAmountString(asset)}" else "Withdraw",
-                onClick = {
-                    if (destination != null && onWithdraw(amount, destination)) withdrawnAmount = amount.toPlainString()
+                label = when {
+                    submit.busy -> "Withdrawing…"
+                    canWithdraw -> "Withdraw LKR ${amount.toAmountString(asset)}"
+                    else -> "Withdraw"
                 },
-                enabled = canWithdraw,
+                onClick = {
+                    if (destination != null) {
+                        submit.run {
+                            onWithdraw(amount, destination, requestKey)
+                            withdrawnAmount = amount.toPlainString()
+                        }
+                    }
+                },
+                enabled = canWithdraw && !submit.busy,
                 style = PayCeylonButtonStyle.Accent,
                 modifier = Modifier,
             )

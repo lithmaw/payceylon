@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
+
+// Per-machine settings (API address, Firebase project) live in the untracked local.properties.
+val localProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
+}
+
+fun localSetting(key: String, default: String = ""): String =
+    "\"" + (localProperties.getProperty(key) ?: default).replace("\"", "\\\"") + "\""
 
 android {
     namespace = "com.payceylon.app"
@@ -17,10 +28,20 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "API_BASE_URL", localSetting("payceylon.apiBaseUrl", "http://10.0.2.2:8000/"))
+        buildConfigField("String", "FIREBASE_API_KEY", localSetting("payceylon.firebase.apiKey"))
+        buildConfigField("String", "FIREBASE_APP_ID", localSetting("payceylon.firebase.appId"))
+        buildConfigField("String", "FIREBASE_PROJECT_ID", localSetting("payceylon.firebase.projectId"))
     }
 
     buildTypes {
+        debug {
+            // The local API is plain HTTP on the developer's network.
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
         release {
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             optimization {
                 enable = false
             }
@@ -32,6 +53,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -53,7 +75,13 @@ dependencies {
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.zxing.core)
     implementation(libs.haze)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.play.services)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

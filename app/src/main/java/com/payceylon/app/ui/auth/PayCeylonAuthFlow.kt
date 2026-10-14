@@ -16,18 +16,44 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
+import com.google.firebase.auth.PhoneAuthProvider
+import com.payceylon.app.data.ApiException
+import com.payceylon.app.data.CodeRequest
+import com.payceylon.app.data.PhoneAuth
+import com.payceylon.app.ui.components.findActivity
+import com.payceylon.app.ui.components.rememberSubmitState
 
 private enum class AuthDestination { Onboarding, Otp }
 
-/** Demo-only verification code until Firebase phone auth is connected. */
-internal const val DemoOtpCode = "123456"
-
+/** Phone sign-in: Firebase texts a code, and a confirmed code signs the user in. */
 @Composable
-fun PayCeylonAuthFlow(onAuthenticated: (phoneNumber: String) -> Unit) {
+fun PayCeylonAuthFlow(onAuthenticated: () -> Unit) {
     var destination by rememberSaveable { mutableStateOf(AuthDestination.Onboarding) }
     var onboardingPage by rememberSaveable { mutableIntStateOf(0) }
     var phoneNumber by rememberSaveable { mutableStateOf("") }
+    var verificationId by rememberSaveable { mutableStateOf<String?>(null) }
+    var resendToken by rememberSaveable { mutableStateOf<PhoneAuthProvider.ForceResendingToken?>(null) }
+    val context = LocalContext.current
+    val submit = rememberSubmitState()
+
+    /** Texts a code to the entered number; resending reuses Firebase's token. */
+    fun requestCode(resend: Boolean) = submit.run {
+        val activity = context.findActivity() ?: return@run
+        val request = PhoneAuth.requestCode(activity, "+94${normalizeSriLankanMobileNumber(phoneNumber)}", resendToken.takeIf { resend })
+        when (request) {
+            is CodeRequest.Sent -> {
+                verificationId = request.verificationId
+                resendToken = request.resendToken
+                destination = AuthDestination.Otp
+            }
+            is CodeRequest.Verified -> {
+                PhoneAuth.signIn(request.credential)
+                onAuthenticated()
+            }
+        }
+    }
 
     BackHandler(enabled = destination == AuthDestination.Otp) {
         destination = AuthDestination.Onboarding
@@ -62,7 +88,8 @@ fun PayCeylonAuthFlow(onAuthenticated: (phoneNumber: String) -> Unit) {
                 phoneNumber = phoneNumber,
                 onPhoneNumberChange = { phoneNumber = it },
                 onPageChange = { onboardingPage = it },
-                onFinished = { destination = AuthDestination.Otp },
+                onFinished = { requestCode(resend = false) },
+                isSendingCode = submit.busy,
             )
 
             AuthDestination.Otp -> OtpScreen(
@@ -71,11 +98,26 @@ fun PayCeylonAuthFlow(onAuthenticated: (phoneNumber: String) -> Unit) {
                     destination = AuthDestination.Onboarding
                     onboardingPage = 2
                 },
-                // Replace with Firebase/remote OTP verification.
                 onCodeComplete = { code ->
-                    (code == DemoOtpCode).also { accepted -> if (accepted) onAuthenticated(phoneNumber) }
+                    val id = verificationId
+                    if (id == null) {
+                        "Request a new code."
+                    } else {
+                        try {
+                            PhoneAuth.signIn(PhoneAuth.credential(id, code))
+                            onAuthenticated()
+                            null
+                        } catch (e: ApiException) {
+                            e.message
+                        }
+                    }
                 },
-                onLogIn = { /* Existing-account authentication entry point. */ },
+                onResend = { requestCode(resend = true) },
+                // Signing in and signing up are the same phone verification.
+                onLogIn = {
+                    destination = AuthDestination.Onboarding
+                    onboardingPage = 2
+                },
             )
         }
     }

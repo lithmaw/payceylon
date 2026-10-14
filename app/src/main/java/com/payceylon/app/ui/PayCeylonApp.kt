@@ -33,6 +33,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.payceylon.app.ui.account.AccountSetting
 import com.payceylon.app.ui.account.AddBankScreen
@@ -44,8 +47,11 @@ import com.payceylon.app.ui.account.PaymentMethodsScreen
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.ProfileScreen
 import com.payceylon.app.ui.account.SettingsScreen
+import com.payceylon.app.ui.auth.ConnectionProblemScreen
 import com.payceylon.app.ui.auth.PayCeylonAuthFlow
+import com.payceylon.app.ui.auth.ProfileSetupScreen
 import com.payceylon.app.ui.components.PayCeylonEasing
+import com.payceylon.app.ui.components.showError
 import com.payceylon.app.ui.theme.CryptoWalletColors
 import com.payceylon.app.ui.theme.FiatWalletColors
 import com.payceylon.app.ui.theme.LocalWalletColors
@@ -56,6 +62,7 @@ import com.payceylon.app.ui.wallet.QrScanScreen
 import com.payceylon.app.ui.wallet.ReceiveScreen
 import com.payceylon.app.ui.wallet.SendMoneyScreen
 import com.payceylon.app.ui.wallet.SendToUsernameScreen
+import com.payceylon.app.ui.wallet.SessionState
 import com.payceylon.app.ui.wallet.SwapScreen
 import com.payceylon.app.ui.wallet.TopUpScreen
 import com.payceylon.app.ui.wallet.TransactionDetailScreen
@@ -65,10 +72,11 @@ import com.payceylon.app.ui.wallet.WalletType
 import com.payceylon.app.ui.wallet.WalletViewModel
 import com.payceylon.app.ui.wallet.WithdrawScreen
 import com.payceylon.app.ui.wallet.toKeypadInput
+import kotlinx.coroutines.delay
 
 /** Ordered by depth so transitions can slide forward or back. */
 private enum class AppDestination {
-    Auth, Home, Transactions, Receive, Swap, TopUp, Withdraw,
+    Auth, ProfileSetup, Home, Transactions, Receive, Swap, TopUp, Withdraw,
     Settings, Profile, EditProfileField, PaymentMethods, AddCard, AddBank, Legal,
     TransactionDetail, QrScan, SendToUsername, SendMoney,
 }
@@ -106,7 +114,8 @@ fun PayCeylonApp(
     var editingField by rememberSaveable { mutableStateOf(ProfileField.Name) }
     var legalDocument by rememberSaveable { mutableStateOf(LegalDocument.Privacy) }
     var walletSwitch by remember { mutableStateOf<WalletType?>(null) }
-    var selectedTransactionId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var selectedTransactionId by rememberSaveable { mutableStateOf<String?>(null) }
+    val session = walletViewModel.session
     // Bumped for every new payment request so Send Money starts fresh even if it is
     // already on screen (e.g. a link opened while the user was mid-payment).
     var sendMoneySession by rememberSaveable { mutableIntStateOf(0) }
@@ -127,7 +136,7 @@ fun PayCeylonApp(
 
     /** Where the system back gesture and on-screen back buttons lead from each screen. */
     fun parentOf(screen: AppDestination): AppDestination = when (screen) {
-        AppDestination.Auth, AppDestination.Home -> screen
+        AppDestination.Auth, AppDestination.ProfileSetup, AppDestination.Home -> screen
         AppDestination.Profile, AppDestination.PaymentMethods, AppDestination.Legal -> AppDestination.Settings
         AppDestination.EditProfileField -> AppDestination.Profile
         AppDestination.AddCard, AppDestination.AddBank -> addMethodOrigin
@@ -141,11 +150,42 @@ fun PayCeylonApp(
         destination = parentOf(destination)
     }
 
-    // Deep links wait until the user has passed the OTP, then open straight into Send Money
+    // The session decides whether the user sees sign-in, profile setup or the wallet.
+    LaunchedEffect(session) {
+        when (session) {
+            SessionState.SignedOut -> destination = AppDestination.Auth
+            SessionState.NeedsProfile -> destination = AppDestination.ProfileSetup
+            SessionState.SignedIn -> if (destination == AppDestination.Auth || destination == AppDestination.ProfileSetup) {
+                destination = AppDestination.Home
+            }
+            else -> Unit
+        }
+    }
+
+    // Keep balances, history and notifications current while the app is on screen, so money
+    // sent from another phone shows up within a few seconds.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(session) {
+        if (session != SessionState.SignedIn) return@LaunchedEffect
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                walletViewModel.refreshQuietly()
+                delay(5_000)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        walletViewModel.messages.collect { showError(context, it) }
+    }
+
+    val inWallet = destination != AppDestination.Auth && destination != AppDestination.ProfileSetup
+
+    // Deep links wait until the user has signed in, then open straight into Send Money
     // (or Receive, for the user's own code).
-    LaunchedEffect(pendingPaymentLink, destination == AppDestination.Auth) {
+    LaunchedEffect(pendingPaymentLink, inWallet) {
         val link = pendingPaymentLink ?: return@LaunchedEffect
-        if (destination == AppDestination.Auth) return@LaunchedEffect
+        if (!inWallet) return@LaunchedEffect
         if (link.handle.equals(account.profile.handle, ignoreCase = true)) {
             destination = AppDestination.Receive
         } else {
@@ -154,13 +194,13 @@ fun PayCeylonApp(
         onPaymentLinkHandled()
     }
 
-    BackHandler(enabled = destination != AppDestination.Auth && destination != AppDestination.Home) {
+    BackHandler(enabled = inWallet && destination != AppDestination.Home) {
         goBack()
     }
 
     // Onboarding and OTP always use the light palette; the wallet follows the selected wallet.
     val palette = when {
-        destination == AppDestination.Auth -> FiatWalletColors
+        !inWallet -> FiatWalletColors
         walletViewModel.selectedWallet == WalletType.Crypto -> CryptoWalletColors
         else -> FiatWalletColors
     }
@@ -209,10 +249,12 @@ fun PayCeylonApp(
             ) { target ->
                 when (target) {
                     AppDestination.Auth -> PayCeylonAuthFlow(
-                        onAuthenticated = { phoneNumber ->
-                            account.signedIn(phoneNumber)
-                            destination = AppDestination.Home
-                        },
+                        onAuthenticated = walletViewModel::restoreSession,
+                    )
+
+                    AppDestination.ProfileSetup -> ProfileSetupScreen(
+                        isHandleAvailable = account::isHandleAvailable,
+                        onSave = walletViewModel::completeProfile,
                     )
 
                     AppDestination.Home -> HomeScreen(
@@ -290,7 +332,7 @@ fun PayCeylonApp(
 
                     AppDestination.TopUp -> TopUpScreen(
                         methods = account.paymentMethods,
-                        onTopUp = walletViewModel::topUp,
+                        onTopUp = { amount, method, key -> walletViewModel.topUp(amount, method, key) },
                         onAddMethod = { openAddMethod(AppDestination.AddCard, origin = AppDestination.TopUp) },
                         onBack = ::goBack,
                         onDone = { destination = AppDestination.Home },
@@ -299,7 +341,7 @@ fun PayCeylonApp(
                     AppDestination.Withdraw -> WithdrawScreen(
                         balance = walletViewModel.balanceOf(Asset.LKR),
                         banks = account.banks,
-                        onWithdraw = walletViewModel::withdraw,
+                        onWithdraw = { amount, bank, key -> walletViewModel.withdraw(amount, bank, key) },
                         onAddBank = { openAddMethod(AppDestination.AddBank, origin = AppDestination.Withdraw) },
                         onBack = ::goBack,
                         onDone = { destination = AppDestination.Home },
@@ -328,10 +370,7 @@ fun PayCeylonApp(
                                 Toast.makeText(context, "Email support@payceylon.lk", Toast.LENGTH_LONG).show()
                             }
                         },
-                        onLogOut = {
-                            walletViewModel.selectedWallet = WalletType.Fiat
-                            destination = AppDestination.Auth
-                        },
+                        onLogOut = walletViewModel::logOut,
                     )
 
                     AppDestination.Profile -> ProfileScreen(
@@ -392,6 +431,7 @@ fun PayCeylonApp(
 
                     AppDestination.SendToUsername -> SendToUsernameScreen(
                         recentRecipients = walletViewModel.recentRecipients,
+                        searchUsers = { query -> walletViewModel.searchUsers(query) },
                         onBack = ::goBack,
                         onRecipientSelected = { handle ->
                             openSendMoney(PaymentRequest(handle), origin = AppDestination.SendToUsername)
@@ -404,12 +444,27 @@ fun PayCeylonApp(
                             initialAsset = prefillAsset ?: walletViewModel.selectedAsset,
                             initialAmount = prefillAmount,
                             balanceOf = walletViewModel::balanceOf,
-                            onSend = { amount, asset -> walletViewModel.send(recipientHandle, amount, asset) },
+                            onSend = { amount, asset, key -> walletViewModel.send(recipientHandle, amount, asset, key) },
                             onBack = ::goBack,
                             onDone = { destination = AppDestination.Home },
                         )
                     }
                 }
+            }
+
+            when (session) {
+                // Brief, while a saved sign-in is checked with the server.
+                SessionState.Checking -> Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(palette.page),
+                )
+                is SessionState.Unreachable -> ConnectionProblemScreen(
+                    message = session.message,
+                    onRetry = walletViewModel::restoreSession,
+                    onSignOut = walletViewModel::logOut,
+                )
+                else -> Unit
             }
 
             walletSwitch?.let { target ->

@@ -60,21 +60,25 @@ import com.payceylon.app.ui.components.bounceClick
 import com.payceylon.app.ui.components.staggeredEntrance
 import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
+import com.payceylon.app.ui.components.rememberSubmitState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import java.util.UUID
 
 @Composable
 fun SwapScreen(
     initialFrom: Asset,
     balanceOf: (Asset) -> BigDecimal,
-    /** Performs the swap; returns the amount received, or null if it was rejected. */
-    onSwap: (from: Asset, to: Asset, amount: BigDecimal) -> BigDecimal?,
+    /** Performs the swap and returns the amount received; throws ApiException when rejected. */
+    onSwap: suspend (from: Asset, to: Asset, amount: BigDecimal, requestKey: String) -> BigDecimal,
     onBack: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalWalletColors.current
+    val requestKey = rememberSaveable { UUID.randomUUID().toString() }
+    val submit = rememberSubmitState()
     var from by rememberSaveable { mutableStateOf(initialFrom) }
     var to by rememberSaveable { mutableStateOf(defaultSwapTarget(initialFrom)) }
     var amountInput by rememberSaveable { mutableStateOf("") }
@@ -202,11 +206,11 @@ fun SwapScreen(
             )
             Spacer(Modifier.height(20.dp))
             PayCeylonButton(
-                label = "Swap ${from.code} to ${to.code}",
+                label = if (submit.busy) "Swapping…" else "Swap ${from.code} to ${to.code}",
                 onClick = {
-                    onSwap(from, to, amount)?.let { result = it.toPlainString() }
+                    submit.run { result = onSwap(from, to, amount, requestKey).toPlainString() }
                 },
-                enabled = canSwap,
+                enabled = canSwap && !submit.busy,
                 modifier = Modifier.staggeredEntrance(3),
             )
         }

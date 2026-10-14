@@ -51,7 +51,7 @@ internal fun NotificationsPanel(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     notifications: List<AppNotification>,
-    transactionFor: (Long) -> WalletTransaction?,
+    transactionFor: (String) -> WalletTransaction?,
     onMarkAllRead: () -> Unit,
     onNotificationClick: (AppNotification) -> Unit,
 ) {

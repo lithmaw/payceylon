@@ -50,14 +50,9 @@ import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
 import kotlinx.coroutines.delay
 import java.math.BigDecimal
-import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-/** PayCeylon reference shown to support, e.g. "PC-20481139". */
-internal val WalletTransaction.reference: String
-    get() = "PC-" + (20_000_000 + (id * 7_919 + 482_113) % 79_999_999).toString()
 
 /**
  * Network fee for crypto transfers (fixed per token for the prototype); fiat transfers
@@ -66,16 +61,14 @@ internal val WalletTransaction.reference: String
 internal fun WalletTransaction.networkFee(): Pair<Asset, BigDecimal>? {
     if (direction != TransactionDirection.Outgoing) return null
     val asset = Asset.fromCode(currency) ?: return null
-    // Recorded fee where there is one; older seeded transfers fall back to the current rate.
-    return (fee ?: WalletFees.networkFee(asset))?.let { asset to it }
+    return fee?.let { asset to it }
 }
 
-/** Sample on-chain hash derived from the transaction, standing in for the explorer hash. */
-internal val WalletTransaction.sampleHash: String
-    get() = MessageDigest.getInstance("SHA-256")
-        .digest("$id|$counterpartyHandle|$currency|$amount|$timestamp".toByteArray())
-        .joinToString("") { "%02x".format(it) }
-        .let { if (Asset.fromCode(currency) == Asset.ETH) "0x$it" else it }
+private fun statusLabel(status: String) = when (status) {
+    "PENDING" -> "Pending"
+    "FAILED" -> "Failed"
+    else -> "Completed"
+}
 
 private fun shorten(value: String) = "${value.take(8)}…${value.takeLast(6)}"
 
@@ -236,15 +229,16 @@ fun TransactionDetailScreen(
                     value = if (copiedLabel == "Reference") "Copied" else transaction.reference,
                     onClick = { copy("Reference", transaction.reference) },
                 )
-                if (isCrypto && !isSwap && transaction.direction != TransactionDirection.TopUp) {
+                val txHash = transaction.txHash
+                if (isCrypto && !isSwap && txHash != null) {
                     DetailRow(
                         label = "Transaction hash",
-                        value = if (copiedLabel == "Transaction hash") "Copied" else shorten(transaction.sampleHash),
-                        onClick = { copy("Transaction hash", transaction.sampleHash) },
+                        value = if (copiedLabel == "Transaction hash") "Copied" else shorten(txHash),
+                        onClick = { copy("Transaction hash", txHash) },
                         showDivider = false,
                     )
                 } else {
-                    DetailRow("Status", "Completed", showDivider = false)
+                    DetailRow("Status", statusLabel(transaction.status), showDivider = false)
                 }
             }
             Spacer(Modifier.height(20.dp))
@@ -349,8 +343,7 @@ private fun DetailRow(
 @Composable
 private fun PartyRow(label: String, transaction: WalletTransaction) {
     val colors = LocalWalletColors.current
-    val user = findPayCeylonUser(transaction.counterpartyHandle)
-        ?: PayCeylonUser(transaction.counterpartyName, transaction.counterpartyHandle)
+    val user = PayCeylonUser(transaction.counterpartyName, transaction.counterpartyHandle)
     Column {
         Row(
             modifier = Modifier

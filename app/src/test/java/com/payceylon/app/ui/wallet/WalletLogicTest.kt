@@ -3,7 +3,6 @@ package com.payceylon.app.ui.wallet
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
@@ -42,43 +41,6 @@ class WalletLogicTest {
     }
 
     @Test
-    fun sendDebitsWalletAndRecordsTransaction() {
-        val wallet = WalletViewModel()
-        val before = wallet.balanceOf(Asset.LKR)
-        assertTrue(wallet.send("sajjad67", BigDecimal("1000"), Asset.LKR))
-        assertEquals(before - BigDecimal("1000"), wallet.balanceOf(Asset.LKR))
-        assertEquals("Transfer to Sajjad", wallet.transactions.first().title)
-        assertFalse(wallet.send("sajjad67", before, Asset.LKR))
-        assertFalse(wallet.send("sajjad67", BigDecimal.ZERO, Asset.LKR))
-    }
-
-    @Test
-    fun searchRanksHandlePrefixBeforeNameMatches() {
-        // "ka" prefixes @kavindi.p and appears inside @anuka67 and Weerasekara.
-        assertEquals(
-            listOf("kavindi.p", "anuka67", "sachini.w"),
-            searchPayCeylonUsers("ka").map { it.handle },
-        )
-    }
-
-    @Test
-    fun searchMatchesNamesAndIgnoresAtSign() {
-        assertEquals(listOf("kavindi.p"), searchPayCeylonUsers("@kavi").map { it.handle })
-        assertEquals("sajjad67", searchPayCeylonUsers("ahamed").single().handle)
-        assertTrue(searchPayCeylonUsers("   ").isEmpty())
-        assertTrue(searchPayCeylonUsers("zzzz").isEmpty())
-    }
-
-    @Test
-    fun recentRecipientsAreDistinctAndNewestFirst() {
-        val wallet = WalletViewModel()
-        wallet.send("kavindi.p", BigDecimal("10"), Asset.LKR)
-        val recents = wallet.recentRecipients.map { it.handle }
-        assertEquals("kavindi.p", recents.first())
-        assertEquals(recents.distinct(), recents)
-    }
-
-    @Test
     fun formatsTokenAmountsAtTheirPrecision() {
         assertEquals("0" to ".0125", BigDecimal("0.0125").toAmountParts("BTC"))
         assertEquals("0" to ".15", BigDecimal("0.15").toAmountParts("ETH"))
@@ -87,26 +49,9 @@ class WalletLogicTest {
     }
 
     @Test
-    fun walletsHaveSeparateTransactionsAndTokenAddresses() {
-        val wallet = WalletViewModel()
-        assertTrue(wallet.transactions.any { it.wallet == WalletType.Crypto })
-        assertTrue(wallet.transactions.any { it.wallet == WalletType.Fiat })
+    fun tokensMapToAssets() {
         assertEquals(Asset.USDT, Asset.of(CryptoToken.USDT))
         assertEquals("TQn9Y2…KcbLSE", CryptoToken.USDT.shortAddress())
-    }
-
-    @Test
-    fun sendingATokenDebitsThatTokenOnly() {
-        val wallet = WalletViewModel()
-        val btcBefore = wallet.balanceOf(Asset.BTC)
-        val lkrBefore = wallet.balanceOf(Asset.LKR)
-        assertTrue(wallet.send("pasan.lk", BigDecimal("0.01"), Asset.BTC))
-        // 0.01 BTC plus the 0.00002 BTC network fee.
-        assertEquals(0, (btcBefore - BigDecimal("0.01002")).compareTo(wallet.balanceOf(Asset.BTC)))
-        assertEquals(lkrBefore, wallet.balanceOf(Asset.LKR))
-        val sent = wallet.transactions.first()
-        assertEquals("BTC", sent.currency)
-        assertEquals(WalletType.Crypto, sent.wallet)
     }
 
     @Test
@@ -119,139 +64,48 @@ class WalletLogicTest {
     }
 
     @Test
-    fun selectedAssetFollowsWalletAndToken() {
-        val wallet = WalletViewModel()
-        assertEquals(Asset.LKR, wallet.selectedAsset)
-        wallet.selectedWallet = WalletType.Crypto
-        wallet.selectedToken = CryptoToken.ETH
-        assertEquals(Asset.ETH, wallet.selectedAsset)
-    }
-
-    @Test
-    fun swapMovesFundsAtTheQuotedRateAfterFee() {
-        val wallet = WalletViewModel()
-        val usdtBefore = wallet.balanceOf(Asset.USDT)
-        val btcBefore = wallet.balanceOf(Asset.BTC)
+    fun swapQuoteMatchesTheServer() {
         // 100 USDT - 0.5% fee = 99.50 USDT; at 300 / 30,000,000 LKR that is 0.000995 BTC.
         assertEquals(0, BigDecimal("0.000995").compareTo(SwapRates.quote(Asset.USDT, Asset.BTC, BigDecimal("100"))))
-        val received = wallet.swap(Asset.USDT, Asset.BTC, BigDecimal("100"))!!
-        assertEquals(0, BigDecimal("0.000995").compareTo(received))
-        assertEquals(usdtBefore - BigDecimal("100"), wallet.balanceOf(Asset.USDT))
-        assertEquals(0, (btcBefore + received).compareTo(wallet.balanceOf(Asset.BTC)))
-        val tx = wallet.transactions.first()
-        assertEquals(TransactionDirection.Swap, tx.direction)
-        assertEquals("Swap USDT to BTC", tx.title)
-        assertTrue(tx.belongsTo(WalletType.Crypto))
-    }
-
-    @Test
-    fun swapRejectsInvalidRequests() {
-        val wallet = WalletViewModel()
-        assertNull(wallet.swap(Asset.USDT, Asset.USDT, BigDecimal("1")))
-        assertNull(wallet.swap(Asset.USDT, Asset.BTC, BigDecimal("999999")))
-        assertNull(wallet.swap(Asset.USDT, Asset.BTC, BigDecimal.ZERO))
+        // A pre-rounded 1/300 rate would give 9.94; the server gives 9.95.
+        assertEquals(BigDecimal("9.95"), SwapRates.quote(Asset.LKR, Asset.USDT, BigDecimal("3000")))
     }
 
     @Test
     fun lkrSwapsShowInBothWallets() {
-        val wallet = WalletViewModel()
-        wallet.swap(Asset.LKR, Asset.USDT, BigDecimal("3000"))
-        val tx = wallet.transactions.first()
-        assertTrue(tx.belongsTo(WalletType.Fiat))
-        assertTrue(tx.belongsTo(WalletType.Crypto))
+        val swap = tx(TransactionDirection.Swap, "LKR", "3000").copy(toCurrency = "USDT", toAmount = BigDecimal("9.95"))
+        assertTrue(swap.belongsTo(WalletType.Fiat))
+        assertTrue(swap.belongsTo(WalletType.Crypto))
+        assertEquals("Swap LKR to USDT", swap.title)
+        val cryptoOnly = tx(TransactionDirection.Swap, "USDT", "1").copy(toCurrency = "BTC", wallet = WalletType.Crypto)
+        assertFalse(cryptoOnly.belongsTo(WalletType.Fiat))
     }
 
     @Test
-    fun transactionDetailsAreStable() {
-        val tx = WalletViewModel().transactions.first { it.currency == "BTC" }
-        assertEquals(tx.reference, tx.reference)
-        assertTrue(tx.reference.matches(Regex("""PC-\d{8}""")))
-        assertEquals(64, tx.sampleHash.length)
-        assertNull(tx.networkFee()) // incoming transfers carry no fee for the receiver
-    }
-    private val WalletViewModel.visa get() = account.cards.first()
-    private val WalletViewModel.commercialBank get() = account.banks.first()
-
-    @Test
-    fun cardTopUpCreditsWalletChargesFeeAndNotifies() {
-        val wallet = WalletViewModel()
-        val before = wallet.balanceOf(Asset.LKR)
-        assertTrue(wallet.topUp(BigDecimal("1000"), wallet.visa))
-        assertEquals(before + BigDecimal("1000"), wallet.balanceOf(Asset.LKR))
-        val tx = wallet.transactions.first()
-        assertEquals(TransactionDirection.TopUp, tx.direction)
-        assertEquals("Top up from Visa", tx.title)
-        assertEquals(0, BigDecimal("15.00").compareTo(tx.fee))
-        assertTrue(tx.belongsTo(WalletType.Fiat))
-        val notification = wallet.account.notifications.first()
-        assertEquals(tx.id, notification.transactionId)
-        assertFalse(notification.read)
+    fun netChangeCountsFeesOnDebits() {
+        val withdrawal = tx(TransactionDirection.Withdrawal, "LKR", "5000").copy(fee = BigDecimal("25.00"), feeCurrency = "LKR")
+        assertEquals(0, BigDecimal("-5025").compareTo(withdrawal.netChange(Asset.LKR)))
+        val topUp = tx(TransactionDirection.TopUp, "LKR", "1000").copy(fee = BigDecimal("15.00"))
+        // The card fee is charged to the card, not the wallet.
+        assertEquals(0, BigDecimal("1000").compareTo(topUp.netChange(Asset.LKR)))
+        assertTrue(withdrawal.direction.isDebit)
     }
 
     @Test
-    fun bankTopUpIsFreeAndLimited() {
-        val wallet = WalletViewModel()
-        assertEquals(0, WalletFees.topUpFee(BigDecimal("1000"), wallet.commercialBank).signum())
-        assertFalse(wallet.topUp(BigDecimal("500000.01"), wallet.visa))
-        assertFalse(wallet.topUp(BigDecimal.ZERO, wallet.visa))
+    fun incomingTransfersCarryNoFeeForTheReceiver() {
+        assertNull(tx(TransactionDirection.Incoming, "BTC", "0.01").networkFee())
+        val sent = tx(TransactionDirection.Outgoing, "USDT", "10").copy(fee = BigDecimal("1.00"), feeCurrency = "USDT")
+        assertEquals(Asset.USDT to BigDecimal("1.00"), sent.networkFee())
     }
 
-    @Test
-    fun withdrawalDebitsAmountPlusFee() {
-        val wallet = WalletViewModel()
-        val before = wallet.balanceOf(Asset.LKR)
-        assertTrue(wallet.withdraw(BigDecimal("5000"), wallet.commercialBank))
-        assertEquals(0, (before - BigDecimal("5025")).compareTo(wallet.balanceOf(Asset.LKR)))
-        val tx = wallet.transactions.first()
-        assertEquals(TransactionDirection.Withdrawal, tx.direction)
-        assertTrue(tx.direction.isDebit)
-        assertEquals("Withdraw to Commercial Bank", tx.title)
-    }
-
-    @Test
-    fun withdrawalRejectsCardsAndOverdrafts() {
-        val wallet = WalletViewModel()
-        val balance = wallet.balanceOf(Asset.LKR)
-        assertFalse(wallet.withdraw(BigDecimal("100"), wallet.visa))
-        assertFalse(wallet.withdraw(balance, wallet.commercialBank))
-        assertTrue(wallet.withdraw(balance - WalletFees.withdrawalFee, wallet.commercialBank))
-        assertEquals(0, wallet.balanceOf(Asset.LKR).signum())
-    }
-
-    @Test
-    fun externalTransfersAreNotRecentRecipients() {
-        val wallet = WalletViewModel()
-        wallet.topUp(BigDecimal("1000"), wallet.visa)
-        assertTrue(wallet.recentRecipients.none { it.name == "Visa" })
-    }
-
-    @Test
-    fun cryptoSendsPayTheNetworkFee() {
-        val wallet = WalletViewModel()
-        val before = wallet.balanceOf(Asset.USDT)
-        assertTrue(wallet.send("janidup", BigDecimal("10"), Asset.USDT))
-        assertEquals(0, (before - BigDecimal("11.00")).compareTo(wallet.balanceOf(Asset.USDT)))
-        assertEquals(0, BigDecimal("1.00").compareTo(wallet.transactions.first().fee))
-        // The fee counts towards the balance check.
-        assertFalse(wallet.send("janidup", wallet.balanceOf(Asset.USDT), Asset.USDT))
-    }
-
-    @Test
-    fun monthlyChangeWorksBackFromRecentTransactions() {
-        val wallet = WalletViewModel()
-        // Seeded LKR: -10,000 -2,500 +6,700 -4,320 = -10,120 over the month.
-        // 32,483.75 now vs 42,603.75 a month ago is -23.8%.
-        assertEquals(0, BigDecimal("-23.8").compareTo(wallet.monthlyChangePercent(Asset.LKR)))
-        wallet.topUp(BigDecimal("10120"), wallet.visa)
-        assertEquals(0, BigDecimal.ZERO.compareTo(wallet.monthlyChangePercent(Asset.LKR)))
-    }
-
-    @Test
-    fun turningOffTransactionAlertsSilencesPaymentNotifications() {
-        val wallet = WalletViewModel()
-        wallet.account.setEnabled(com.payceylon.app.ui.account.AccountSetting.TransactionAlerts, false)
-        val count = wallet.account.notifications.size
-        wallet.send("janidup", BigDecimal("10"), Asset.LKR)
-        assertEquals(count, wallet.account.notifications.size)
-    }
+    private fun tx(direction: TransactionDirection, currency: String, amount: String) = WalletTransaction(
+        id = "tx",
+        counterpartyName = "Nimal Silva",
+        counterpartyHandle = "nimal",
+        direction = direction,
+        currency = currency,
+        amount = BigDecimal(amount),
+        wallet = if (currency == "LKR") WalletType.Fiat else WalletType.Crypto,
+        timestamp = 0,
+    )
 }

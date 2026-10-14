@@ -29,9 +29,11 @@ import androidx.compose.ui.unit.sp
 import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.auth.PayCeylonButton
 import com.payceylon.app.ui.auth.PayCeylonButtonStyle
+import com.payceylon.app.ui.components.rememberSubmitState
 import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
 import java.math.BigDecimal
+import java.util.UUID
 
 /**
  * Adds LKR to the fiat wallet from a linked card or bank account. Crypto can't be topped up
@@ -41,8 +43,8 @@ import java.math.BigDecimal
 fun TopUpScreen(
     /** Linked cards and bank accounts. */
     methods: List<PaymentMethod>,
-    /** Returns false when the top-up is rejected (e.g. over the limit). */
-    onTopUp: (amount: BigDecimal, method: PaymentMethod) -> Boolean,
+    /** Adds the money; throws ApiException when rejected (e.g. over the limit). */
+    onTopUp: suspend (amount: BigDecimal, method: PaymentMethod, requestKey: String) -> Unit,
     onAddMethod: () -> Unit,
     onBack: () -> Unit,
     onDone: () -> Unit,
@@ -50,6 +52,8 @@ fun TopUpScreen(
 ) {
     val colors = LocalWalletColors.current
     val asset = Asset.LKR
+    val requestKey = rememberSaveable { UUID.randomUUID().toString() }
+    val submit = rememberSubmitState()
     var amountInput by rememberSaveable { mutableStateOf("") }
     var methodId by rememberSaveable { mutableStateOf(methods.firstOrNull()?.id) }
     var addedAmount by rememberSaveable { mutableStateOf<String?>(null) }
@@ -154,11 +158,20 @@ fun TopUpScreen(
             )
             Spacer(Modifier.height(16.dp))
             PayCeylonButton(
-                label = if (canTopUp) "Top up LKR ${amount.toAmountString(asset)}" else "Top up",
-                onClick = {
-                    if (method != null && onTopUp(amount, method)) addedAmount = amount.toPlainString()
+                label = when {
+                    submit.busy -> "Topping up…"
+                    canTopUp -> "Top up LKR ${amount.toAmountString(asset)}"
+                    else -> "Top up"
                 },
-                enabled = canTopUp,
+                onClick = {
+                    if (method != null) {
+                        submit.run {
+                            onTopUp(amount, method, requestKey)
+                            addedAmount = amount.toPlainString()
+                        }
+                    }
+                },
+                enabled = canTopUp && !submit.busy,
                 style = PayCeylonButtonStyle.Accent,
                 modifier = Modifier,
             )

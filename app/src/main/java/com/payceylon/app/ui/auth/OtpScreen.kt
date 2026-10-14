@@ -70,14 +70,18 @@ import kotlinx.coroutines.launch
 fun OtpScreen(
     maskedPhoneNumber: String,
     onBack: () -> Unit,
-    /** Returns true when the code is accepted; a rejected code is cleared and flagged. */
-    onCodeComplete: (String) -> Boolean,
+    /** Checks the code; returns why it was rejected (the code is then cleared), or null. */
+    onCodeComplete: suspend (String) -> String?,
+    /** Texts a new code. */
+    onResend: () -> Unit,
     onLogIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var code by rememberSaveable { mutableStateOf("") }
-    var secondsRemaining by rememberSaveable { mutableIntStateOf(12) }
+    var secondsRemaining by rememberSaveable { mutableIntStateOf(30) }
     var isCodeRejected by rememberSaveable { mutableStateOf(false) }
+    var rejection by rememberSaveable { mutableStateOf("That code didn't match. Try again.") }
+    var isChecking by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val shakeOffset = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
@@ -138,12 +142,17 @@ fun OtpScreen(
         BasicTextField(
             value = code,
             onValueChange = { newValue ->
+                if (isChecking) return@BasicTextField
                 val digits = newValue.filter(Char::isDigit).take(6)
                 code = digits
                 if (digits.isNotEmpty()) isCodeRejected = false
-                if (digits.length == 6 && !onCodeComplete(digits)) {
-                    isCodeRejected = true
-                    scope.launch {
+                if (digits.length == 6) scope.launch {
+                    isChecking = true
+                    val problem = onCodeComplete(digits)
+                    isChecking = false
+                    if (problem != null) {
+                        rejection = problem
+                        isCodeRejected = true
                         shakeOffset.animateTo(
                             targetValue = 0f,
                             animationSpec = keyframes {
@@ -238,9 +247,18 @@ fun OtpScreen(
             },
         )
 
+        AnimatedVisibility(visible = isChecking) {
+            Text(
+                text = "Checking code…",
+                modifier = Modifier.padding(top = 14.dp),
+                color = MutedText,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
         AnimatedVisibility(visible = isCodeRejected) {
             Text(
-                text = "That code didn't match. Try again.",
+                text = rejection,
                 modifier = Modifier.padding(top = 14.dp),
                 color = PayCeylonRed,
                 fontSize = 14.sp,
@@ -258,6 +276,8 @@ fun OtpScreen(
                 if (secondsRemaining == 0) {
                     secondsRemaining = 30
                     code = ""
+                    isCodeRejected = false
+                    onResend()
                     focusRequester.requestFocus()
                 }
             },

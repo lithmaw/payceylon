@@ -59,6 +59,7 @@ import com.payceylon.app.ui.auth.PayCeylonButtonStyle
 import com.payceylon.app.ui.components.PayCeylonDropdownMenu
 import com.payceylon.app.ui.components.PayCeylonEasing
 import com.payceylon.app.ui.components.PayCeylonTextField
+import com.payceylon.app.ui.components.rememberSubmitState
 import com.payceylon.app.ui.components.tap
 import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
@@ -75,6 +76,7 @@ fun PaymentMethodsScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalWalletColors.current
+    val submit = rememberSubmitState()
     var pendingRemoval by remember { mutableStateOf<PaymentMethod?>(null) }
 
     Column(
@@ -155,8 +157,8 @@ fun PaymentMethodsScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    account.removePaymentMethod(method.id)
                     pendingRemoval = null
+                    submit.run { account.removePaymentMethod(method.id) }
                 }) {
                     Text("Remove", color = PayCeylonPrimary, fontFamily = InterFontFamily, fontWeight = FontWeight.SemiBold)
                 }
@@ -212,6 +214,7 @@ fun AddCardScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalWalletColors.current
+    val submit = rememberSubmitState()
     val context = LocalContext.current
     // Card details live only in this screen's state; only brand, last four and expiry are saved.
     var number by remember { mutableStateOf("") }
@@ -301,12 +304,14 @@ fun AddCardScreen(
                 if (listOf(numberError, expiryError, cvvError, holderError).any { it != null }) {
                     showErrors = true
                 } else {
-                    val method = account.addCard(number, expiry, holder)
-                    Toast.makeText(context, "${method.title} added", Toast.LENGTH_SHORT).show()
-                    onAdded(method)
+                    submit.run {
+                        val method = account.addCard(number, expiry, holder)
+                        Toast.makeText(context, "${method.title} added", Toast.LENGTH_SHORT).show()
+                        onAdded(method)
+                    }
                 }
             },
-            enabled = number.isNotEmpty() && expiry.isNotEmpty() && cvv.isNotEmpty() && holder.isNotBlank(),
+            enabled = number.isNotEmpty() && expiry.isNotEmpty() && cvv.isNotEmpty() && holder.isNotBlank() && !submit.busy,
             style = PayCeylonButtonStyle.Accent,
         )
     }
@@ -425,6 +430,7 @@ fun AddBankScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalWalletColors.current
+    val submit = rememberSubmitState()
     val context = LocalContext.current
     var bank by rememberSaveable { mutableStateOf<String?>(null) }
     var holder by rememberSaveable { mutableStateOf(account.profile.name) }
@@ -539,12 +545,14 @@ fun AddBankScreen(
                 if (chosen == null || numberError != null || holderError != null) {
                     showErrors = true
                 } else {
-                    val method = account.addBank(chosen, number, holder, isSavings = typeIndex == 0)
-                    Toast.makeText(context, "${method.title} linked", Toast.LENGTH_SHORT).show()
-                    onAdded(method)
+                    submit.run {
+                        val method = account.addBank(chosen, number, holder, isSavings = typeIndex == 0)
+                        Toast.makeText(context, "${method.title} linked", Toast.LENGTH_SHORT).show()
+                        onAdded(method)
+                    }
                 }
             },
-            enabled = number.isNotEmpty() && holder.isNotBlank(),
+            enabled = number.isNotEmpty() && holder.isNotBlank() && !submit.busy,
             style = PayCeylonButtonStyle.Accent,
         )
     }

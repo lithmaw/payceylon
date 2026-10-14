@@ -123,6 +123,8 @@ fun OnboardingScreen(
     onPageChange: (Int) -> Unit,
     onFinished: () -> Unit,
     modifier: Modifier = Modifier,
+    /** True while the SMS code is being requested. */
+    isSendingCode: Boolean = false,
 ) {
     var displayedPage by remember { mutableIntStateOf(currentPage.coerceIn(onboardingPages.indices)) }
     var transitionDirection by remember { mutableIntStateOf(1) }
@@ -206,6 +208,7 @@ fun OnboardingScreen(
                         value = phoneNumber,
                         onValueChange = onPhoneNumberChange,
                         onContinue = onFinished,
+                        isSendingCode = isSendingCode,
                     )
                 } else {
                     StandardOnboardingControls(
@@ -436,6 +439,7 @@ private fun PhoneEntryControls(
     value: String,
     onValueChange: (String) -> Unit,
     onContinue: () -> Unit,
+    isSendingCode: Boolean,
 ) {
     val isValid = validateSriLankanMobileNumber(value) == PhoneNumberValidation.Valid
 
@@ -446,10 +450,10 @@ private fun PhoneEntryControls(
         )
         Spacer(Modifier.height(14.dp))
         PayCeylonButton(
-            label = "Get Started",
+            label = if (isSendingCode) "Sending code…" else "Get Started",
             onClick = onContinue,
             style = PayCeylonButtonStyle.Accent,
-            enabled = isValid,
+            enabled = isValid && !isSendingCode,
         )
         Spacer(Modifier.height(16.dp))
         Text(

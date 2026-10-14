@@ -6,11 +6,17 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.payceylon.app.R
+import com.payceylon.app.data.ApiException
+import com.payceylon.app.data.AppServices
+import com.payceylon.app.data.Backend
 import com.payceylon.app.ui.account.AccountState
-import com.payceylon.app.ui.account.NotificationKind
 import com.payceylon.app.ui.account.PaymentMethod
-import com.payceylon.app.ui.account.PaymentMethodType
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
@@ -93,53 +99,8 @@ data class PayCeylonUser(val name: String, val handle: String) {
             .joinToString("") { it.first().uppercase() }
 }
 
-/** Registered PayCeylon users the prototype can send to. Replace with a remote user search. */
-val PayCeylonDirectory = listOf(
-    PayCeylonUser("Sajjad Ahamed", "sajjad67"),
-    PayCeylonUser("Janidu Perera", "janidup"),
-    PayCeylonUser("Ruveen Jayasinghe", "ruveenobject"),
-    PayCeylonUser("Anuka Fernando", "anuka67"),
-    PayCeylonUser("Dialog Axiata", "dialoglk"),
-    PayCeylonUser("Kavindi Perera", "kavindi.p"),
-    PayCeylonUser("Tharindu Silva", "tharindu_s"),
-    PayCeylonUser("Nimesha Rathnayake", "nimesha99"),
-    PayCeylonUser("Dulanjaya Wickramasinghe", "dulanjaya"),
-    PayCeylonUser("Sachini Weerasekara", "sachini.w"),
-    PayCeylonUser("Pasan Gunawardena", "pasan.lk"),
-    PayCeylonUser("Hiruni Madushani", "hiruni_m"),
-    PayCeylonUser("Keells Super", "keells"),
-    PayCeylonUser("PickMe", "pickme.lk"),
-)
-
-/**
- * Matches users whose handle or name contains [query] (ignoring a leading "@"), ranking
- * handle prefixes first, then name prefixes, then other matches.
- */
-fun searchPayCeylonUsers(query: String, limit: Int = 5): List<PayCeylonUser> {
-    val q = query.trim().removePrefix("@").lowercase()
-    if (q.isEmpty()) return emptyList()
-    return PayCeylonDirectory
-        .mapNotNull { user ->
-            val handle = user.handle.lowercase()
-            val name = user.name.lowercase()
-            val rank = when {
-                handle.startsWith(q) -> 0
-                name.split(' ').any { it.startsWith(q) } -> 1
-                q in handle || q in name -> 2
-                else -> return@mapNotNull null
-            }
-            rank to user
-        }
-        .sortedWith(compareBy({ it.first }, { it.second.handle }))
-        .take(limit)
-        .map { it.second }
-}
-
-fun findPayCeylonUser(handle: String): PayCeylonUser? =
-    PayCeylonDirectory.firstOrNull { it.handle.equals(handle.removePrefix("@"), ignoreCase = true) }
-
 data class WalletTransaction(
-    val id: Long,
+    val id: String,
     val counterpartyName: String,
     val counterpartyHandle: String,
     val direction: TransactionDirection,
@@ -155,6 +116,12 @@ data class WalletTransaction(
     /** Fee charged on top of [amount], in [feeCurrency]: card top-up, bank payout or network fee. */
     val fee: BigDecimal? = null,
     val feeCurrency: String? = null,
+    /** PayCeylon reference shown to support, e.g. "PC-4F2A9C01DE". */
+    val reference: String = "",
+    /** PENDING, COMPLETED or FAILED. */
+    val status: String = "COMPLETED",
+    /** On-chain hash for crypto transfers that left PayCeylon; null otherwise. */
+    val txHash: String? = null,
 ) {
     val title: String
         get() = when (direction) {
@@ -240,25 +207,37 @@ object SwapRates {
 
     /** What arrives for [amount] of [from], after the fee, cut to [to]'s precision. */
     fun quote(from: Asset, to: Asset, amount: BigDecimal): BigDecimal =
+        // Multiply before dividing, as the server does, so a rounded rate never costs a unit.
         (amount - fee(from, amount)).max(BigDecimal.ZERO)
-            .multiply(rate(from, to))
-            .setScale(to.decimals, RoundingMode.DOWN)
+            .multiply(lkrPrice.getValue(from))
+            .divide(lkrPrice.getValue(to), to.decimals, RoundingMode.DOWN)
 }
 
+/** Where the session stands; decides what PayCeylonApp shows. */
+sealed interface SessionState {
+    data object Checking : SessionState
+    data object SignedOut : SessionState
+
+    /** Signed in, but the account still has the server's placeholder name. */
+    data object NeedsProfile : SessionState
+    data object SignedIn : SessionState
+
+    /** Signed in to Firebase but the API couldn't be reached. */
+    data class Unreachable(val message: String) : SessionState
+}
+
+/** Name the server gives a new account until the user picks one. */
+internal const val PlaceholderProfileName = "PayCeylon User"
+
 /**
- * In-memory wallet for the prototype. Swap the seeded data for a Room-cached remote
- * repository once the wallet API is available.
+ * The signed-in user's wallet, backed by the PayCeylon API. Screens read the snapshot held
+ * here; [refresh] reloads it (the app polls while open) and every action refreshes after.
  */
-class WalletViewModel : ViewModel() {
-    private val balances = mutableStateOf(
-        mapOf(
-            Asset.LKR to BigDecimal("32483.75"),
-            Asset.USDT to BigDecimal("1284.32"),
-            Asset.BTC to BigDecimal("0.042150"),
-            Asset.ETH to BigDecimal("0.8532"),
-            Asset.SOL to BigDecimal("41.20"),
-        ),
-    )
+class WalletViewModel(private val backend: Backend = AppServices.backend) : ViewModel() {
+    var session by mutableStateOf<SessionState>(SessionState.Checking)
+        private set
+
+    private val balances = mutableStateOf(Asset.entries.associateWith { BigDecimal.ZERO })
 
     var selectedWallet by mutableStateOf(WalletType.Fiat)
 
@@ -274,35 +253,74 @@ class WalletViewModel : ViewModel() {
      */
     var lastShownBalance: Pair<Asset, BigDecimal>? = null
 
-    private val now = System.currentTimeMillis()
-    private fun minutesAgo(minutes: Long) = now - minutes * 60_000
+    /** Newest first. */
+    val transactions = mutableStateListOf<WalletTransaction>()
 
-    val transactions = mutableStateListOf(
-        WalletTransaction(1, "Janidu", "janidup", TransactionDirection.Outgoing, "LKR", BigDecimal("10000.00"), WalletType.Fiat, minutesAgo(12)),
-        WalletTransaction(2, "Sajjad", "sajjad67", TransactionDirection.Incoming, "USDT", BigDecimal("73.54"), WalletType.Crypto, minutesAgo(40)),
-        WalletTransaction(3, "Dialog", "dialoglk", TransactionDirection.Outgoing, "LKR", BigDecimal("2500.00"), WalletType.Fiat, minutesAgo(118)),
-        WalletTransaction(4, "Ruveen", "ruveenobject", TransactionDirection.Outgoing, "SOL", BigDecimal("23.54"), WalletType.Crypto, minutesAgo(124)),
-        WalletTransaction(5, "Anuka", "anuka67", TransactionDirection.Incoming, "LKR", BigDecimal("6700.00"), WalletType.Fiat, minutesAgo(131)),
-        WalletTransaction(6, "Kavindi", "kavindi.p", TransactionDirection.Incoming, "BTC", BigDecimal("0.0125"), WalletType.Crypto, minutesAgo(302)),
-        WalletTransaction(7, "Pasan", "pasan.lk", TransactionDirection.Outgoing, "ETH", BigDecimal("0.15"), WalletType.Crypto, minutesAgo(1_510)),
-        WalletTransaction(8, "Keells", "keells", TransactionDirection.Outgoing, "LKR", BigDecimal("4320.00"), WalletType.Fiat, minutesAgo(1_565)),
-    )
+    /** One-off messages from background work (e.g. a setting that failed to save). */
+    val messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
     /** Profile, linked accounts, settings and the notification feed. */
-    val account = AccountState(now)
+    val account = AccountState(backend, viewModelScope) { messages.tryEmit(it) }
 
     init {
-        // Seed the feed with the recent payments people sent this user.
-        transactions.filter { it.direction == TransactionDirection.Incoming }.forEach { tx ->
-            val asset = Asset.fromCode(tx.currency) ?: Asset.LKR
-            account.notify(
-                NotificationKind.Transaction,
-                "Payment received",
-                "${tx.counterpartyName} sent you ${asset.code} ${tx.amount.toAmountString(asset)}.",
-                transactionId = tx.id,
-                timestamp = tx.timestamp,
-                read = now - tx.timestamp > 60 * 60_000,
-            )
+        restoreSession()
+    }
+
+    /**
+     * Loads the account for the Firebase user on this device, creating it on first sign-in.
+     * Call after signing in, at launch, and from the retry button when the API was unreachable.
+     */
+    fun restoreSession() {
+        if (!backend.hasSession()) {
+            session = SessionState.SignedOut
+            return
+        }
+        session = SessionState.Checking
+        viewModelScope.launch {
+            try {
+                val profile = backend.verify()
+                account.load(profile)
+                refresh()
+                session = if (profile.name == PlaceholderProfileName) SessionState.NeedsProfile else SessionState.SignedIn
+            } catch (e: ApiException) {
+                if (e.status in 400..499) {
+                    // The sign-in itself was rejected (expired, revoked or not a Sri Lankan number).
+                    signOutLocally()
+                    messages.tryEmit(e.message)
+                } else {
+                    session = SessionState.Unreachable(e.message)
+                }
+            }
+        }
+    }
+
+    /** Saves the name and username a new user picked; returns the problem, or null. */
+    suspend fun completeProfile(name: String, handle: String): String? {
+        val error = account.setUpProfile(name, handle)
+        if (error == null) session = SessionState.SignedIn
+        return error
+    }
+
+    /** Reloads balances, history and notifications. Throws [ApiException] on failure. */
+    suspend fun refresh() = coroutineScope {
+        val latestBalances = async { backend.balances() }
+        val latestTransactions = async { backend.transactions() }
+        val notifications = async { account.refreshNotifications() }
+        balances.value = Asset.entries.associateWith { latestBalances.await()[it] ?: BigDecimal.ZERO }
+        val history = latestTransactions.await()
+        if (history != transactions.toList()) {
+            transactions.clear()
+            transactions.addAll(history)
+        }
+        notifications.await()
+    }
+
+    /** [refresh] for polling: failures are ignored, except a revoked session signs out. */
+    suspend fun refreshQuietly() {
+        try {
+            refresh()
+        } catch (e: ApiException) {
+            if (e.isUnauthenticated) signOutLocally()
         }
     }
 
@@ -310,10 +328,18 @@ class WalletViewModel : ViewModel() {
     val recentRecipients: List<PayCeylonUser>
         get() = transactions
             .filter { it.direction == TransactionDirection.Outgoing || it.direction == TransactionDirection.Incoming }
-            .mapNotNull { findPayCeylonUser(it.counterpartyHandle) }
-            .distinct()
+            .map { PayCeylonUser(it.counterpartyName, it.counterpartyHandle) }
+            .distinctBy { it.handle }
 
-    fun balanceOf(asset: Asset): BigDecimal = balances.value.getValue(asset)
+    /** PayCeylon users matching [query], excluding the signed-in user. */
+    suspend fun searchUsers(query: String, limit: Int = 4): List<PayCeylonUser> {
+        if (query.trim().removePrefix("@").isEmpty()) return emptyList()
+        return backend.searchUsers(query.trim(), limit + 1)
+            .filterNot { it.handle.equals(account.profile.handle, ignoreCase = true) }
+            .take(limit)
+    }
+
+    fun balanceOf(asset: Asset): BigDecimal = balances.value[asset] ?: BigDecimal.ZERO
 
     /**
      * Percentage change in [asset]'s balance compared with 30 days ago, worked back from the
@@ -329,116 +355,50 @@ class WalletViewModel : ViewModel() {
         return (current - monthAgo).multiply(BigDecimal(100)).divide(monthAgo, 1, RoundingMode.HALF_UP)
     }
 
-    /**
-     * Debits [asset] (plus the network fee for tokens) and records the transfer. Returns false
-     * when the amount and fee together exceed the balance.
-     */
-    fun send(handle: String, amount: BigDecimal, asset: Asset): Boolean {
-        val balance = balanceOf(asset)
-        val fee = WalletFees.networkFee(asset) ?: BigDecimal.ZERO
-        if (amount <= BigDecimal.ZERO || amount + fee > balance) return false
-        balances.value = balances.value + (asset to balance - amount - fee)
-        val tx = WalletTransaction(
-            id = (transactions.maxOfOrNull { it.id } ?: 0) + 1,
-            counterpartyName = findPayCeylonUser(handle)?.name?.substringBefore(' ')
-                ?: handle.replaceFirstChar { it.uppercase() },
-            counterpartyHandle = handle,
-            direction = TransactionDirection.Outgoing,
-            currency = asset.code,
-            amount = amount,
-            wallet = asset.wallet,
-            timestamp = System.currentTimeMillis(),
-            fee = fee.takeIf { it.signum() > 0 },
-            feeCurrency = asset.code.takeIf { fee.signum() > 0 },
-        )
-        transactions.add(0, tx)
-        notifyTransaction(tx, "Payment sent", "${asset.code} ${amount.toAmountString(asset)} to @$handle.")
-        return true
+    // Actions throw ApiException with a message to show. Pass the same idempotency key when
+    // retrying one payment, so a request that reached the server is never applied twice.
+
+    suspend fun send(handle: String, amount: BigDecimal, asset: Asset, idempotencyKey: String): WalletTransaction =
+        backend.send(handle.removePrefix("@"), amount, asset, idempotencyKey).also { recorded(it) }
+
+    /** Returns what arrived. */
+    suspend fun swap(from: Asset, to: Asset, amount: BigDecimal, idempotencyKey: String): BigDecimal =
+        backend.swap(from, to, amount, idempotencyKey).also { recorded(it) }.toAmount ?: BigDecimal.ZERO
+
+    suspend fun topUp(amount: BigDecimal, method: PaymentMethod, idempotencyKey: String): WalletTransaction =
+        backend.topUp(amount, method.id, idempotencyKey).also { recorded(it) }
+
+    suspend fun withdraw(amount: BigDecimal, bank: PaymentMethod, idempotencyKey: String): WalletTransaction =
+        backend.withdraw(amount, bank.id, idempotencyKey).also { recorded(it) }
+
+    private suspend fun recorded(tx: WalletTransaction) {
+        if (transactions.none { it.id == tx.id }) transactions.add(0, tx)
+        // The action succeeded; a failed reload just leaves the snapshot for the next poll.
+        try {
+            refresh()
+        } catch (_: ApiException) {
+        }
     }
 
-    /**
-     * Swaps [amount] of [from] into [to] at [SwapRates]. Returns what was received, or null
-     * when the amount is invalid or exceeds the balance.
-     */
-    fun swap(from: Asset, to: Asset, amount: BigDecimal): BigDecimal? {
-        val balance = balanceOf(from)
-        if (from == to || amount <= BigDecimal.ZERO || amount > balance) return null
-        val received = SwapRates.quote(from, to, amount)
-        if (received <= BigDecimal.ZERO) return null
-        balances.value = balances.value +
-            (from to balance - amount) +
-            (to to balanceOf(to) + received)
-        val tx = WalletTransaction(
-            id = (transactions.maxOfOrNull { it.id } ?: 0) + 1,
-            counterpartyName = "PayCeylon Swap",
-            counterpartyHandle = "payceylon",
-            direction = TransactionDirection.Swap,
-            currency = from.code,
-            amount = amount,
-            wallet = if (to.wallet == WalletType.Crypto) WalletType.Crypto else from.wallet,
-            timestamp = System.currentTimeMillis(),
-            toCurrency = to.code,
-            toAmount = received,
-        )
-        transactions.add(0, tx)
-        notifyTransaction(
-            tx,
-            "Swap complete",
-            "${from.code} ${amount.toAmountString(from)} → ${to.code} ${received.toAmountString(to)}.",
-        )
-        return received
+    fun logOut() {
+        viewModelScope.launch {
+            try {
+                backend.logout()
+            } catch (_: ApiException) {
+                // Still sign out on this device.
+            }
+            signOutLocally()
+        }
     }
 
-    /**
-     * Adds [amount] LKR to the fiat wallet from a linked card or bank. Crypto can't be topped
-     * up directly; it is bought by swapping LKR. Returns false over the per-top-up limit.
-     */
-    fun topUp(amount: BigDecimal, method: PaymentMethod): Boolean {
-        if (amount <= BigDecimal.ZERO || amount > WalletFees.maxTopUpLkr) return false
-        balances.value = balances.value + (Asset.LKR to balanceOf(Asset.LKR) + amount)
-        val tx = recordExternal(TransactionDirection.TopUp, method, amount, WalletFees.topUpFee(amount, method))
-        notifyTransaction(tx, "Top-up successful", "LKR ${amount.toMoneyString()} added from ${method.title}.")
-        return true
-    }
-
-    /**
-     * Pays [amount] LKR out to a linked bank account, plus [WalletFees.withdrawalFee]. Crypto
-     * must be swapped to LKR first. Returns false when amount and fee exceed the balance.
-     */
-    fun withdraw(amount: BigDecimal, bank: PaymentMethod): Boolean {
-        val fee = WalletFees.withdrawalFee
-        val balance = balanceOf(Asset.LKR)
-        if (bank.type != PaymentMethodType.Bank || amount <= BigDecimal.ZERO || amount + fee > balance) return false
-        balances.value = balances.value + (Asset.LKR to balance - amount - fee)
-        val tx = recordExternal(TransactionDirection.Withdrawal, bank, amount, fee)
-        notifyTransaction(tx, "Withdrawal on its way", "LKR ${amount.toMoneyString()} to ${bank.title}. ETA: ${bank.eta.lowercase()}.")
-        return true
-    }
-
-    private fun notifyTransaction(tx: WalletTransaction, title: String, body: String) {
-        account.notify(NotificationKind.Transaction, title, body, transactionId = tx.id, timestamp = tx.timestamp)
-    }
-
-    private fun recordExternal(
-        direction: TransactionDirection,
-        method: PaymentMethod,
-        amount: BigDecimal,
-        fee: BigDecimal,
-    ): WalletTransaction {
-        val tx = WalletTransaction(
-            id = (transactions.maxOfOrNull { it.id } ?: 0) + 1,
-            counterpartyName = method.name,
-            counterpartyHandle = method.masked,
-            direction = direction,
-            currency = Asset.LKR.code,
-            amount = amount,
-            wallet = WalletType.Fiat,
-            timestamp = System.currentTimeMillis(),
-            fee = fee,
-            feeCurrency = Asset.LKR.code,
-        )
-        transactions.add(0, tx)
-        return tx
+    private fun signOutLocally() {
+        backend.clearSession()
+        balances.value = Asset.entries.associateWith { BigDecimal.ZERO }
+        transactions.clear()
+        account.clear()
+        selectedWallet = WalletType.Fiat
+        lastShownBalance = null
+        session = SessionState.SignedOut
     }
 }
 

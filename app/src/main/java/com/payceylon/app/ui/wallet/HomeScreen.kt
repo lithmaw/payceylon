@@ -326,7 +326,7 @@ private fun WalletHeader(
     onWalletChange: (WalletType) -> Unit,
     photo: ImageBitmap?,
     notifications: List<AppNotification>,
-    transactionFor: (Long) -> WalletTransaction?,
+    transactionFor: (String) -> WalletTransaction?,
     onMarkAllNotificationsRead: () -> Unit,
     onNotificationClick: (AppNotification) -> Unit,
     onProfileClick: () -> Unit,

@@ -56,14 +56,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.PhoneAuthCredential
 import com.payceylon.app.R
-import com.payceylon.app.ui.auth.DemoOtpCode
+import com.payceylon.app.data.ApiException
+import com.payceylon.app.data.CodeRequest
+import com.payceylon.app.data.PhoneAuth
 import com.payceylon.app.ui.auth.PayCeylonButton
 import com.payceylon.app.ui.auth.PayCeylonButtonStyle
 import com.payceylon.app.ui.auth.SriLankanPhoneVisualTransformation
 import com.payceylon.app.ui.auth.maskSriLankanMobileNumber
 import com.payceylon.app.ui.auth.normalizeSriLankanMobileNumber
 import com.payceylon.app.ui.components.PayCeylonTextField
+import com.payceylon.app.ui.components.findActivity
+import com.payceylon.app.ui.components.rememberSubmitState
 import com.payceylon.app.ui.components.tap
 import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
@@ -82,12 +87,12 @@ fun ProfileScreen(
 ) {
     val colors = LocalWalletColors.current
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val submit = rememberSubmitState()
     val profile = account.profile
     // The system photo picker needs no storage permission.
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
-            scope.launch {
+            submit.run {
                 val bitmap = loadProfilePhoto(context, uri)
                 if (bitmap != null) {
                     account.updatePhoto(bitmap)
@@ -155,7 +160,7 @@ fun ProfileScreen(
                 if (account.photo != null) {
                     Text(
                         text = "Remove",
-                        modifier = Modifier.tap { account.updatePhoto(null) },
+                        modifier = Modifier.tap { submit.run { account.updatePhoto(null) } },
                         color = colors.contentSecondary,
                         fontFamily = InterFontFamily,
                         fontSize = 14.sp,
@@ -209,21 +214,57 @@ fun EditProfileFieldScreen(
 ) {
     val colors = LocalWalletColors.current
     val context = LocalContext.current
+    val submit = rememberSubmitState()
     val original = account.profile.valueOf(field)
     var value by rememberSaveable { mutableStateOf(original) }
     var code by rememberSaveable { mutableStateOf("") }
     var verifyingPhone by rememberSaveable { mutableStateOf(false) }
     var codeError by rememberSaveable { mutableStateOf<String?>(null) }
+    var verificationId by rememberSaveable { mutableStateOf<String?>(null) }
+    var serverError by remember { mutableStateOf<String?>(null) }
 
     val normalized = normalizeProfileValue(field, value)
     val changed = normalized != original
-    val error = if (changed && value.isNotBlank()) validateProfileField(field, value, account.profile.handle) else null
+    val error = serverError ?: if (changed && value.isNotBlank()) validateProfileField(field, value) else null
     val canSave = changed && error == null
 
-    fun save() {
-        account.updateProfile(field, value)?.let { return }
+    fun saved() {
         Toast.makeText(context, "${field.label} updated", Toast.LENGTH_SHORT).show()
         onSaved()
+    }
+
+    fun save() = submit.run {
+        val problem = account.updateProfile(field, value)
+        if (problem == null) saved() else serverError = problem
+    }
+
+    /** Moves the account to the new number once Firebase has verified it. */
+    suspend fun changePhone(credential: PhoneAuthCredential) {
+        PhoneAuth.changePhone(credential)
+        account.savePhoneChange()
+        saved()
+    }
+
+    fun sendCode() = submit.run {
+        val host = context.findActivity() ?: return@run
+        when (val request = PhoneAuth.requestCode(host, "+94$normalized")) {
+            is CodeRequest.Sent -> {
+                verificationId = request.verificationId
+                code = ""
+                codeError = null
+                verifyingPhone = true
+            }
+            is CodeRequest.Verified -> changePhone(request.credential)
+        }
+    }
+
+    fun verifyCode() = submit.run {
+        val id = verificationId ?: return@run
+        try {
+            changePhone(PhoneAuth.credential(id, code))
+        } catch (e: ApiException) {
+            if (e.code == "INVALID_OTP") codeError = e.message else throw e
+        }
     }
 
     Column(
@@ -265,7 +306,6 @@ fun EditProfileFieldScreen(
                         label = "Verification code",
                         placeholder = "000000",
                         error = codeError,
-                        helper = "Demo code: $DemoOtpCode",
                         keyboardType = KeyboardType.NumberPassword,
                         imeAction = ImeAction.Done,
                         modifier = Modifier.focusRequester(focus),
@@ -276,6 +316,7 @@ fun EditProfileFieldScreen(
                     PayCeylonTextField(
                         value = if (field == ProfileField.Phone) normalizeSriLankanMobileNumber(value) else value,
                         onValueChange = {
+                            serverError = null
                             value = when (field) {
                                 ProfileField.Phone -> normalizeSriLankanMobileNumber(it)
                                 ProfileField.Username -> it.lowercase().replace(" ", "").take(20)
@@ -285,7 +326,6 @@ fun EditProfileFieldScreen(
                         label = field.label,
                         error = error,
                         helper = when {
-                            field == ProfileField.Username && canSave -> "@$normalized is available"
                             field == ProfileField.Username -> "3–20 characters: letters, numbers, dots, underscores"
                             field == ProfileField.Phone -> "We'll text a code to confirm the new number"
                             field == ProfileField.Email -> "Receipts and security alerts go here"
@@ -315,21 +355,19 @@ fun EditProfileFieldScreen(
         }
         PayCeylonButton(
             label = when {
+                submit.busy -> "Please wait…"
                 verifyingPhone -> "Verify and save"
                 field == ProfileField.Phone -> "Send code"
                 else -> "Save"
             },
             onClick = {
                 when {
-                    verifyingPhone -> if (code == DemoOtpCode) save() else codeError = "That code isn't right. Try again."
-                    field == ProfileField.Phone -> {
-                        code = ""
-                        verifyingPhone = true
-                    }
+                    verifyingPhone -> verifyCode()
+                    field == ProfileField.Phone -> sendCode()
                     else -> save()
                 }
             },
-            enabled = if (verifyingPhone) code.length == 6 else canSave,
+            enabled = !submit.busy && if (verifyingPhone) code.length == 6 else canSave,
             style = PayCeylonButtonStyle.Accent,
         )
     }

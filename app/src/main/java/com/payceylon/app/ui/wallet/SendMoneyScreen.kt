@@ -63,6 +63,7 @@ import com.payceylon.app.ui.components.PayCeylonDropdownMenu
 import com.payceylon.app.ui.components.PayCeylonEasing
 import com.payceylon.app.ui.components.PressSpring
 import com.payceylon.app.ui.components.bounceClick
+import com.payceylon.app.ui.components.rememberSubmitState
 import com.payceylon.app.ui.components.staggeredEntrance
 import com.payceylon.app.ui.theme.LocalWalletColors
 import com.payceylon.app.ui.theme.InterFontFamily
@@ -74,6 +75,7 @@ import java.math.BigDecimal
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.Locale
+import java.util.UUID
 
 private const val MaxWholeDigits = 9
 
@@ -84,8 +86,8 @@ fun SendMoneyScreen(
     /** Keypad-format amount to start with, e.g. from a scanned payment request. */
     initialAmount: String = "",
     balanceOf: (Asset) -> BigDecimal,
-    /** Returns false when the transfer is rejected (e.g. insufficient funds). */
-    onSend: (amount: BigDecimal, asset: Asset) -> Boolean,
+    /** Sends the money; throws ApiException when rejected. Retries reuse [requestKey]. */
+    onSend: suspend (amount: BigDecimal, asset: Asset, requestKey: String) -> Unit,
     onBack: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
@@ -93,6 +95,8 @@ fun SendMoneyScreen(
     var amountInput by rememberSaveable { mutableStateOf(initialAmount) }
     var asset by rememberSaveable { mutableStateOf(initialAsset) }
     var sentAmount by rememberSaveable { mutableStateOf<String?>(null) }
+    val requestKey = rememberSaveable { UUID.randomUUID().toString() }
+    val submit = rememberSubmitState()
 
     val amount = amountInput.toBigDecimalOrNull() ?: BigDecimal.ZERO
     val balance = balanceOf(asset)
@@ -201,11 +205,14 @@ fun SendMoneyScreen(
             )
             Spacer(Modifier.height(20.dp))
             PayCeylonButton(
-                label = "Send",
+                label = if (submit.busy) "Sending…" else "Send",
                 onClick = {
-                    if (onSend(amount, asset)) sentAmount = amount.toPlainString()
+                    submit.run {
+                        onSend(amount, asset, requestKey)
+                        sentAmount = amount.toPlainString()
+                    }
                 },
-                enabled = amount > BigDecimal.ZERO && !exceedsBalance,
+                enabled = amount > BigDecimal.ZERO && !exceedsBalance && !submit.busy,
                 modifier = Modifier.staggeredEntrance(5),
             )
         }
