@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher foreground: the PayCeylon glyph in primary red, centred.
+  Adaptive icons are 108dp, launchers show the middle ~72dp and only promise a 66dp circle,
+  so the glyph is scaled to ~46dp wide: large and legible, fully inside the safe circle,
+  with equal padding on all four sides in every mask shape.
+  Glyph bounds in the source 500 grid: x 177-327, y 180-324 (centre 252,252).
+  scale = 46 / 150 = 0.3067; translate = 54 - 252 * 0.3067 = -23.28.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.3067"
+        android:scaleY="0.3067"
+        android:translateX="-23.28"
+        android:translateY="-23.28">
+        <path
+            android:fillColor="#FFD30943"
+            android:pathData="M209,180H295C303,180 310,187 310,195V210H284C272,210 264,218 259,229C256,235 247,235 244,229C238,217 230,210 218,210H194V195C194,187 201,180 209,180Z" />
+        <path
+            android:fillColor="#FFD30943"
+            android:pathData="M193,226H218C229,226 233,233 238,241C244,253 260,253 266,241C271,232 277,226 288,226H311C320,226 327,233 327,242V308C327,317 320,324 311,324H193C184,324 177,317 177,308V242C177,233 184,226 193,226Z" />
+    </group>
+</vector>
