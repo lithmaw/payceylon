@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +49,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -305,28 +307,40 @@ private fun SwapCard(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = amountText,
-                modifier = Modifier
-                    .weight(1f)
-                    .graphicsLayer {
+            // Shrinks for long figures so they never clip against the asset chip.
+            val stepSize = when {
+                amountText.length > 13 -> 20f
+                amountText.length > 9 -> 26f
+                else -> 34f
+            }
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                val measurer = rememberTextMeasurer()
+                fun amountStyle(size: Float) = TextStyle(
+                    color = amountColor,
+                    fontFamily = InterFontFamily,
+                    fontSize = size.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-size / 34f).sp,
+                    fontFeatureSettings = "tnum",
+                )
+                val naturalWidth = measurer.measure(amountText, amountStyle(stepSize), softWrap = false, maxLines = 1).size.width
+                // Long BTC/ETH figures can still overflow the smallest step; scale them down to fit on one line.
+                val fit = if (naturalWidth > constraints.maxWidth) constraints.maxWidth / naturalWidth.toFloat() else 1f
+                Text(
+                    text = amountText,
+                    modifier = Modifier.graphicsLayer {
                         scaleX = bump.value
                         scaleY = bump.value
                         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
                     },
-                color = amountColor,
-                fontFamily = InterFontFamily,
-                // Shrinks for long figures so they never clip against the asset chip.
-                fontSize = when {
-                    amountText.length > 13 -> 20.sp
-                    amountText.length > 9 -> 26.sp
-                    else -> 34.sp
-                },
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-1).sp,
-                maxLines = 1,
-                style = TextStyle(fontFeatureSettings = "tnum"),
-            )
+                    style = amountStyle(stepSize * fit),
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
             Spacer(Modifier.width(12.dp))
             SwapAssetChip(selected = asset, onSelect = onAssetChange)
         }

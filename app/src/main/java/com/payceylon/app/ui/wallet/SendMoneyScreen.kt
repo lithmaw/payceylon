@@ -16,6 +16,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -50,8 +51,10 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -284,26 +287,35 @@ internal fun AmountDisplay(
             bump.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 900f))
         }
     }
-    Text(
-        text = buildAnnotatedString {
-            withStyle(SpanStyle(color = LocalWalletColors.current.contentTertiary, fontSize = 36.sp)) { append("$currency ") }
-            withStyle(SpanStyle(color = wholeColor, fontSize = wholeSize.sp, letterSpacing = (-0.05f * wholeSize).sp)) {
-                append(whole)
+    val tertiary = LocalWalletColors.current.contentTertiary
+    fun amountText(fit: Float) = buildAnnotatedString {
+        withStyle(SpanStyle(color = tertiary, fontSize = (36 * fit).sp)) { append("$currency ") }
+        withStyle(SpanStyle(color = wholeColor, fontSize = (wholeSize * fit).sp, letterSpacing = (-0.05f * wholeSize * fit).sp)) {
+            append(whole)
+        }
+        withStyle(SpanStyle(color = tertiary, fontSize = (36 * fit).sp, letterSpacing = (-1.8f * fit).sp)) {
+            append(".")
+            withStyle(SpanStyle(color = if (typedDecimals.isNotEmpty()) wholeColor else tertiary)) {
+                append(typedDecimals)
             }
-            withStyle(SpanStyle(color = LocalWalletColors.current.contentTertiary, fontSize = 36.sp, letterSpacing = (-1.8).sp)) {
-                append(".")
-                withStyle(SpanStyle(color = if (typedDecimals.isNotEmpty()) wholeColor else LocalWalletColors.current.contentTertiary)) {
-                    append(typedDecimals)
-                }
-                append("0".repeat((2 - typedDecimals.length).coerceAtLeast(0)))
-            }
-        },
-        modifier = modifier.scale(bump.value),
-        fontFamily = InterFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1,
-        textAlign = TextAlign.Center,
-    )
+            append("0".repeat((2 - typedDecimals.length).coerceAtLeast(0)))
+        }
+    }
+    // Own style (not the theme's 24sp line height) so the line is as tall as the big glyphs.
+    val style = TextStyle(fontFamily = InterFontFamily, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+    BoxWithConstraints(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val measurer = rememberTextMeasurer()
+        val naturalWidth = measurer.measure(amountText(1f), style, softWrap = false, maxLines = 1).size.width
+        // Scale the whole figure down when it's still wider than the screen, so it never wraps or clips.
+        val fit = if (naturalWidth > constraints.maxWidth) constraints.maxWidth / naturalWidth.toFloat() else 1f
+        Text(
+            text = amountText(fit),
+            modifier = Modifier.scale(bump.value),
+            style = style,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
 }
 
 @Composable
