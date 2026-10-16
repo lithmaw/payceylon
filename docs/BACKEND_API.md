@@ -24,12 +24,14 @@ Non-2xx responses use one shape. The app shows `message` to the user, so write i
 | HTTP | `code` | When |
 | --- | --- | --- |
 | 400 | `VALIDATION_FAILED` | A field fails the rules below (`field` is included) |
+| 400 | `INVALID_PHONE` | Not a Sri Lankan mobile number (`field: "phone"`) |
 | 401 | `UNAUTHENTICATED` | Missing / expired token |
-| 401 | `INVALID_OTP` | Wrong or expired SMS code |
+| 401 | `INVALID_OTP` | Wrong, expired or used-up sign-in code |
 | 402 | `INSUFFICIENT_FUNDS` | Amount plus fee exceeds the balance |
 | 403 | `LIMIT_EXCEEDED` | Over a per-transaction limit |
 | 404 | `USER_NOT_FOUND` | Unknown `@handle` |
 | 409 | `USERNAME_TAKEN` | Username already in use |
+| 409 | `PHONE_TAKEN` | Phone number already used by another account |
 | 409 | `QUOTE_EXPIRED` | Swap quote no longer valid |
 | 429 | `RATE_LIMITED` | Too many OTP requests, etc. |
 
@@ -110,20 +112,22 @@ App: `PaymentMethod`, `CardBrand` in `ui/account/AccountState.kt`.
 
 `kind`: `TRANSACTION` | `ACCOUNT` | `SECURITY`. App: `AppNotification`.
 
-## Auth (phone + SMS code)
+## Auth (phone + one-time code)
 
 | Method | Path | Body | Response |
 | --- | --- | --- | --- |
-| POST | `/auth/otp` | `{ "phone": "+94771234567" }` | `204` |
-| POST | `/auth/verify` | `{ "phone": "+94771234567", "code": "123456" }` | `{ accessToken, refreshToken, expiresIn, user }` |
-| POST | `/auth/refresh` | `{ "refreshToken": "…" }` | `{ accessToken, refreshToken, expiresIn }` |
-| POST | `/auth/logout` | – | `204` |
+| POST | `/auth/otp` | `{ "phone": "+94771234567" }` | `{ "expiresIn": 300 }` |
+| POST | `/auth/otp/verify` | `{ "phone": "+94771234567", "code": "123456" }` | `{ "customToken": "…" }` |
+| POST | `/auth/verify` | `{ "idToken": "<Firebase ID token>" }` | `{ user }` |
+| DELETE | `/auth/logout` | – | `204` |
 
 - Phone: Sri Lankan mobile, `+94` followed by 9 digits starting with `7`
   (app: `validateSriLankanMobileNumber` in `ui/auth/SriLankanPhoneNumber.kt`).
-- Code: 6 digits. Expire after 5 minutes; limit resends (the app shows a resend countdown).
+- Code: 6 random digits, printed to the server log (no SMS). Expires after 5 minutes, 5 wrong
+  tries void it, a new one can be requested after 30 seconds (`429 RATE_LIMITED` before that).
+- The custom token signs the app in to Firebase as that number's user (created on first use).
+  Every other request carries the resulting Firebase ID token as `Authorization: Bearer …`.
 - `user` in the verify response is the full profile (see `/me`). New numbers create an account.
-- App today: `DemoOtpCode = "123456"` in `ui/auth/PayCeylonAuthFlow.kt`.
 
 ## Profile
 
@@ -131,8 +135,7 @@ App: `PaymentMethod`, `CardBrand` in `ui/account/AccountState.kt`.
 | --- | --- | --- | --- |
 | GET | `/me` | – | Profile |
 | PATCH | `/me` | any of `{ name, handle, email }` | Profile |
-| POST | `/me/phone/otp` | `{ "phone": "+94…" }` | `204` |
-| POST | `/me/phone/verify` | `{ "phone": "+94…", "code": "…" }` | Profile |
+| PATCH | `/me/phone` | `{ "phone": "+94…", "code": "…" }` (code from `/auth/otp` for the new number) | Profile |
 | PUT | `/me/photo` | `multipart/form-data` image | Profile |
 | DELETE | `/me/photo` | – | Profile |
 | GET | `/users/check-handle?handle=kasun_lk` | – | `{ "available": true }` |

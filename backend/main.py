@@ -71,6 +71,9 @@ DEMO_PEERS = [
 
 
 USER_COLUMNS = "id, firebase_uid, phone, name, handle, email, photo_url, photo_id"
+OTP_TTL_SECONDS = 300
+OTP_RESEND_SECONDS = 30
+OTP_MAX_ATTEMPTS = 5
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 IMAGE_SIGNATURES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG\r\n\x1a\n": "image/png"}
 
@@ -99,8 +102,13 @@ class VerifyBody(Body):
     id_token: str = Field(alias="idToken", min_length=1)
 
 
-class VerifiedPhoneBody(Body):
-    id_token: str = Field(alias="idToken", min_length=1)
+class OtpRequestBody(Body):
+    phone: str
+
+
+class OtpVerifyBody(Body):
+    phone: str
+    code: str
 
 
 def reject_null(value: Any) -> Any:
@@ -398,8 +406,70 @@ async def save_response(
     )
 
 
+def sri_lankan_mobile(phone: str) -> str:
+    if not re.fullmatch(r"\+947\d{8}", phone):
+        raise problem(400, "INVALID_PHONE", "Enter a Sri Lankan mobile number.", "phone")
+    return phone
+
+
+def otp_hash(phone: str, code: str) -> str:
+    return hashlib.sha256(f"{phone}:{code}".encode()).hexdigest()
+
+
+async def issue_otp(phone: str) -> None:
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    issued = await app.state.pool.fetchval(
+        """INSERT INTO otp_codes(phone, code_hash, expires_at)
+        VALUES($1, $2, now() + $3::int * interval '1 second')
+        ON CONFLICT(phone) DO UPDATE
+        SET code_hash=EXCLUDED.code_hash, expires_at=EXCLUDED.expires_at, attempts=0, created_at=now()
+        WHERE otp_codes.created_at <= now() - $4::int * interval '1 second'
+        RETURNING true""",
+        phone, otp_hash(phone, code), OTP_TTL_SECONDS, OTP_RESEND_SECONDS,
+    )
+    if not issued:
+        raise problem(429, "RATE_LIMITED", f"Wait {OTP_RESEND_SECONDS} seconds before asking for another code.")
+    # There is no SMS provider: the code is read from the server log (e.g. `railway logs`).
+    logging.getLogger("payceylon").warning("OTP for %s: %s (valid %d minutes)", phone, code, OTP_TTL_SECONDS // 60)
+
+
+async def check_otp(phone: str, code: str) -> None:
+    """Consumes the pending code for [phone], or raises INVALID_OTP."""
+    async with app.state.pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            "SELECT code_hash, attempts, expires_at > now() AS live FROM otp_codes WHERE phone=$1 FOR UPDATE",
+            phone,
+        )
+        if row is None or not row["live"]:
+            failure = "That code has expired. Request a new one."
+        elif row["attempts"] >= OTP_MAX_ATTEMPTS:
+            failure = "Too many wrong codes. Request a new one."
+        elif not secrets.compare_digest(row["code_hash"], otp_hash(phone, code)):
+            # Recorded before raising, so the transaction doesn't roll the count back.
+            await conn.execute("UPDATE otp_codes SET attempts=attempts+1 WHERE phone=$1", phone)
+            failure = "That code didn't match. Try again."
+        else:
+            await conn.execute("DELETE FROM otp_codes WHERE phone=$1", phone)
+            return
+    raise problem(401, "INVALID_OTP", failure)
+
+
+def firebase_uid_for_phone(phone: str) -> str:
+    """The Firebase user that owns [phone], created on first sign-in."""
+    try:
+        return auth.get_user_by_phone_number(phone).uid
+    except auth.UserNotFoundError:
+        pass
+    try:
+        return auth.create_user(phone_number=phone).uid
+    except auth.PhoneNumberAlreadyExistsError:
+        # A parallel sign-in created it first.
+        return auth.get_user_by_phone_number(phone).uid
+
+
 async def create_user_from_firebase(claims: dict[str, Any]) -> asyncpg.Record:
-    phone = claims.get("phone_number", "")
+    # "phone" is the claim our own sign-in tokens carry, in case the ID token has no phone_number.
+    phone = claims.get("phone_number") or claims.get("phone", "")
     if not re.fullmatch(r"\+947\d{8}", phone):
         raise problem(400, "VALIDATION_FAILED", "A verified Sri Lankan mobile number is required.", "phone")
     uid = claims["uid"]
@@ -566,6 +636,22 @@ async def verify_phone(body: VerifyBody, request: Request) -> dict[str, Any]:
     return {"user": profile(request, user)}
 
 
+@app.post("/v1/auth/otp")
+async def request_otp(body: OtpRequestBody) -> dict[str, int]:
+    await issue_otp(sri_lankan_mobile(body.phone))
+    return {"expiresIn": OTP_TTL_SECONDS}
+
+
+@app.post("/v1/auth/otp/verify")
+async def verify_otp(body: OtpVerifyBody) -> dict[str, str]:
+    """Swaps a correct code for a Firebase custom token the app signs in with."""
+    phone = sri_lankan_mobile(body.phone)
+    await check_otp(phone, body.code)
+    uid = await run_in_threadpool(firebase_uid_for_phone, phone)
+    token = await run_in_threadpool(auth.create_custom_token, uid, {"phone": phone})
+    return {"customToken": token.decode() if isinstance(token, bytes) else token}
+
+
 @app.get("/v1/me")
 async def get_me(user: User, request: Request) -> dict[str, Any]:
     return profile(request, user)
@@ -595,20 +681,18 @@ async def update_me(body: ProfilePatch, user: User, request: Request) -> dict[st
 
 
 @app.patch("/v1/me/phone")
-async def update_phone(body: VerifiedPhoneBody, user: User, request: Request) -> dict[str, Any]:
+async def update_phone(body: OtpVerifyBody, user: User, request: Request) -> dict[str, Any]:
+    phone = sri_lankan_mobile(body.phone)
+    await check_otp(phone, body.code)
     try:
-        claims = await verify_token(body.id_token)
-    except Exception:
-        raise problem(401, "INVALID_OTP", "Verify the new phone number and try again.") from None
-    phone = claims.get("phone_number", "")
-    if claims.get("uid") != user["firebase_uid"] or not re.fullmatch(r"\+947\d{8}", phone):
-        raise problem(400, "VALIDATION_FAILED", "The new phone number was not verified for this account.", "phone")
-    try:
-        updated = await app.state.pool.fetchrow(
-            f"UPDATE users SET phone=$2,updated_at=now() WHERE id=$1 RETURNING {USER_COLUMNS}",
-            user["id"], phone,
-        )
-    except asyncpg.UniqueViolationError:
+        async with app.state.pool.acquire() as conn, conn.transaction():
+            updated = await conn.fetchrow(
+                f"UPDATE users SET phone=$2,updated_at=now() WHERE id=$1 RETURNING {USER_COLUMNS}",
+                user["id"], phone,
+            )
+            # Inside the transaction so a Firebase failure leaves the old number in place.
+            await run_in_threadpool(auth.update_user, user["firebase_uid"], phone_number=phone)
+    except (asyncpg.UniqueViolationError, auth.PhoneNumberAlreadyExistsError):
         raise problem(409, "PHONE_TAKEN", "That phone number is already in use.", "phone") from None
     return profile(request, updated)
 

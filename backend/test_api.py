@@ -6,10 +6,12 @@ Uses TEST_DATABASE_URL (an empty, disposable database: its tables are dropped) o
 import asyncio
 import itertools
 import os
+import re
 import secrets
 import tempfile
 import unittest
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest import mock
 
 import asyncpg
@@ -65,7 +67,16 @@ def fake_verify(token, check_revoked=False):
 class ApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.revoked = []
-        for name, fake in (("verify_id_token", fake_verify), ("revoke_refresh_tokens", self.revoked.append)):
+        self.firebase_phones = {}  # phone -> Firebase uid
+        fakes = (
+            ("verify_id_token", fake_verify),
+            ("revoke_refresh_tokens", self.revoked.append),
+            ("get_user_by_phone_number", self.fake_get_user_by_phone),
+            ("create_user", self.fake_create_user),
+            ("create_custom_token", lambda uid, claims: f"custom|{uid}|{claims['phone']}".encode()),
+            ("update_user", self.fake_update_user),
+        )
+        for name, fake in fakes:
             patcher = mock.patch.object(main.auth, name, fake)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -77,6 +88,36 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.client.aclose()
         await self.lifespan.__aexit__(None, None, None)
+
+    def fake_get_user_by_phone(self, phone):
+        if phone not in self.firebase_phones:
+            raise main.auth.UserNotFoundError("No user record found for the given identifier.")
+        return SimpleNamespace(uid=self.firebase_phones[phone])
+
+    def fake_create_user(self, phone_number):
+        self.firebase_phones[phone_number] = f"fb-{secrets.token_hex(4)}"
+        return SimpleNamespace(uid=self.firebase_phones[phone_number])
+
+    def fake_update_user(self, uid, phone_number):
+        if self.firebase_phones.get(phone_number, uid) != uid:
+            raise main.auth.PhoneNumberAlreadyExistsError("The user with the provided phone number already exists.", None)
+        self.firebase_phones = {phone: owner for phone, owner in self.firebase_phones.items() if owner != uid}
+        self.firebase_phones[phone_number] = uid
+
+    async def request_code(self, phone):
+        with self.assertLogs("payceylon", "WARNING") as logs:
+            response = await self.client.post("/v1/auth/otp", json={"phone": phone})
+        self.assertEqual(response.status_code, 200, response.text)
+        return re.search(rf"OTP for {re.escape(phone)}: (\d{{6}})", logs.output[-1]).group(1)
+
+    async def sign_in_with_code(self, phone):
+        """Request, read and confirm a code; returns the ID token the app would then hold."""
+        code = await self.request_code(phone)
+        response = await self.client.post("/v1/auth/otp/verify", json={"phone": phone, "code": code})
+        self.assertEqual(response.status_code, 200, response.text)
+        _, uid, claimed_phone = response.json()["customToken"].split("|")
+        self.assertEqual(claimed_phone, phone)
+        return f"tok|{uid}|{phone}"
 
     async def sign_up(self, name="Kasun Perera", phone=None):
         phone = phone or f"+9477{next(_phones):07d}"
@@ -106,6 +147,72 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         balances = (await self.client.get("/v1/wallet/balances", headers=self.auth(token))).json()["balances"]
         self.assertEqual(balances["LKR"], "32483.75")
         self.assertEqual(balances["BTC"], "0.042150")
+
+    async def test_code_from_the_log_signs_in_the_same_account_each_time(self):
+        phone = f"+9477{next(_phones):07d}"
+        token = await self.sign_in_with_code(phone)
+        first = (await self.client.post("/v1/auth/verify", json={"idToken": token})).json()["user"]
+        again = await self.sign_in_with_code(phone)
+        second = (await self.client.post("/v1/auth/verify", json={"idToken": again})).json()["user"]
+        self.assertEqual(token, again)
+        self.assertEqual(first["handle"], second["handle"])
+        self.assertEqual(first["phone"], phone)
+
+    async def test_codes_are_random_and_single_use(self):
+        phone = f"+9477{next(_phones):07d}"
+        code = await self.request_code(phone)
+        verified = await self.client.post("/v1/auth/otp/verify", json={"phone": phone, "code": code})
+        reused = await self.client.post("/v1/auth/otp/verify", json={"phone": phone, "code": code})
+        self.assertEqual(verified.status_code, 200)
+        self.assertEqual(reused.status_code, 401)
+        self.assertEqual(reused.json()["error"]["code"], "INVALID_OTP")
+        self.assertNotEqual(code, await self.request_code(phone))
+
+    async def test_resend_is_throttled(self):
+        phone = f"+9477{next(_phones):07d}"
+        await self.request_code(phone)
+        response = await self.client.post("/v1/auth/otp", json={"phone": phone})
+        self.assertEqual(response.status_code, 429)
+
+    async def test_wrong_codes_lock_the_code(self):
+        phone = f"+9477{next(_phones):07d}"
+        code = await self.request_code(phone)
+        wrong = f"{(int(code) + 1) % 1_000_000:06d}"
+        for _ in range(main.OTP_MAX_ATTEMPTS):
+            response = await self.client.post("/v1/auth/otp/verify", json={"phone": phone, "code": wrong})
+            self.assertEqual(response.status_code, 401)
+        response = await self.client.post("/v1/auth/otp/verify", json={"phone": phone, "code": code})
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("Too many", response.json()["error"]["message"])
+
+    async def test_code_request_rejects_non_sri_lankan_number(self):
+        response = await self.client.post("/v1/auth/otp", json={"phone": "+15551234567"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"]["code"], "INVALID_PHONE")
+
+    async def test_phone_change_needs_a_code_for_the_new_number(self):
+        token = await self.sign_in_with_code(f"+9477{next(_phones):07d}")
+        await self.client.post("/v1/auth/verify", json={"idToken": token})
+        new_phone = f"+9477{next(_phones):07d}"
+        wrong = await self.client.patch("/v1/me/phone", headers=self.auth(token), json={"phone": new_phone, "code": "000000"})
+        self.assertEqual(wrong.status_code, 401)
+        code = await self.request_code(new_phone)
+        response = await self.client.patch("/v1/me/phone", headers=self.auth(token), json={"phone": new_phone, "code": code})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["phone"], new_phone)
+        self.assertEqual(self.firebase_phones[new_phone], token.split("|")[1])
+
+    async def test_phone_change_to_a_taken_number_conflicts(self):
+        token = await self.sign_in_with_code(f"+9477{next(_phones):07d}")
+        await self.client.post("/v1/auth/verify", json={"idToken": token})
+        other = await self.sign_in_with_code(f"+9477{next(_phones):07d}")
+        await self.client.post("/v1/auth/verify", json={"idToken": other})
+        taken = other.split("|")[2]
+        code = await self.request_code(taken)
+        response = await self.client.patch("/v1/me/phone", headers=self.auth(token), json={"phone": taken, "code": code})
+        self.assertEqual(response.status_code, 409)
+        me = (await self.client.get("/v1/me", headers=self.auth(token))).json()
+        self.assertEqual(me["phone"], token.split("|")[2])
 
     async def test_sign_up_rejects_non_sri_lankan_number(self):
         response = await self.client.post("/v1/auth/verify", json={"idToken": "tok|uid-x|+15551234567"})

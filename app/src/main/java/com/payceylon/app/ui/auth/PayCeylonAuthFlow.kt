@@ -16,43 +16,26 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
-import com.google.firebase.auth.PhoneAuthProvider
 import com.payceylon.app.data.ApiException
-import com.payceylon.app.data.CodeRequest
 import com.payceylon.app.data.PhoneAuth
-import com.payceylon.app.ui.components.findActivity
 import com.payceylon.app.ui.components.rememberSubmitState
 
 private enum class AuthDestination { Onboarding, Otp }
 
-/** Phone sign-in: Firebase texts a code, and a confirmed code signs the user in. */
+/** Phone sign-in: the server issues a one-time code, and a confirmed code signs the user in. */
 @Composable
 fun PayCeylonAuthFlow(onAuthenticated: () -> Unit) {
     var destination by rememberSaveable { mutableStateOf(AuthDestination.Onboarding) }
     var onboardingPage by rememberSaveable { mutableIntStateOf(0) }
     var phoneNumber by rememberSaveable { mutableStateOf("") }
-    var verificationId by rememberSaveable { mutableStateOf<String?>(null) }
-    var resendToken by rememberSaveable { mutableStateOf<PhoneAuthProvider.ForceResendingToken?>(null) }
-    val context = LocalContext.current
     val submit = rememberSubmitState()
+    val e164 = "+94${normalizeSriLankanMobileNumber(phoneNumber)}"
 
-    /** Texts a code to the entered number; resending reuses Firebase's token. */
-    fun requestCode(resend: Boolean) = submit.run {
-        val activity = context.findActivity() ?: return@run
-        val request = PhoneAuth.requestCode(activity, "+94${normalizeSriLankanMobileNumber(phoneNumber)}", resendToken.takeIf { resend })
-        when (request) {
-            is CodeRequest.Sent -> {
-                verificationId = request.verificationId
-                resendToken = request.resendToken
-                destination = AuthDestination.Otp
-            }
-            is CodeRequest.Verified -> {
-                PhoneAuth.signIn(request.credential)
-                onAuthenticated()
-            }
-        }
+    /** Has the server issue a code for the entered number (read from the server log). */
+    fun requestCode() = submit.run {
+        PhoneAuth.requestCode(e164)
+        destination = AuthDestination.Otp
     }
 
     BackHandler(enabled = destination == AuthDestination.Otp) {
@@ -88,7 +71,7 @@ fun PayCeylonAuthFlow(onAuthenticated: () -> Unit) {
                 phoneNumber = phoneNumber,
                 onPhoneNumberChange = { phoneNumber = it },
                 onPageChange = { onboardingPage = it },
-                onFinished = { requestCode(resend = false) },
+                onFinished = { requestCode() },
                 isSendingCode = submit.busy,
             )
 
@@ -99,24 +82,19 @@ fun PayCeylonAuthFlow(onAuthenticated: () -> Unit) {
                     onboardingPage = 2
                 },
                 onCodeComplete = { code ->
-                    val id = verificationId
-                    if (id == null) {
-                        "Request a new code."
-                    } else {
-                        try {
-                            PhoneAuth.signIn(PhoneAuth.credential(id, code))
-                            onAuthenticated()
-                            null
-                        } catch (e: ApiException) {
-                            e.message
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            "Something went wrong. Please try again."
-                        }
+                    try {
+                        PhoneAuth.signIn(e164, code)
+                        onAuthenticated()
+                        null
+                    } catch (e: ApiException) {
+                        e.message
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        "Something went wrong. Please try again."
                     }
                 },
-                onResend = { requestCode(resend = true) },
+                onResend = { requestCode() },
                 // Signing in and signing up are the same phone verification.
                 onLogIn = {
                     destination = AuthDestination.Onboarding

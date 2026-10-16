@@ -20,6 +20,15 @@ internal data class VerifyResponse(val user: ProfileDto)
 internal data class IdTokenRequest(val idToken: String)
 
 @Serializable
+internal data class CodeRequestBody(val phone: String)
+
+@Serializable
+internal data class CodeConfirmBody(val phone: String, val code: String)
+
+@Serializable
+internal data class CustomTokenResponse(val customToken: String)
+
+@Serializable
 internal data class AvailabilityResponse(val available: Boolean)
 
 @Serializable

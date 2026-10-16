@@ -38,13 +38,19 @@ interface Backend {
     /** Signs out of Firebase locally. */
     fun clearSession()
 
+    /** Has the server issue a one-time code for [phone]; it appears in the server log. */
+    suspend fun requestCode(phone: String)
+
+    /** Checks the code and returns a Firebase custom token for [phone]'s user. */
+    suspend fun confirmCode(phone: String, code: String): String
+
     /** Creates or loads the PayCeylon account for the signed-in phone number. */
     suspend fun verify(): UserProfile
     suspend fun me(): UserProfile
     suspend fun updateProfile(changes: Map<ProfileField, String?>): UserProfile
 
-    /** Saves the phone number just verified on the Firebase user. */
-    suspend fun updatePhone(): UserProfile
+    /** Moves the account to [phone], proven by a code requested for it. */
+    suspend fun updatePhone(phone: String, code: String): UserProfile
     suspend fun uploadPhoto(jpeg: ByteArray): UserProfile
     suspend fun removePhoto(): UserProfile
     suspend fun downloadPhoto(url: String): ByteArray

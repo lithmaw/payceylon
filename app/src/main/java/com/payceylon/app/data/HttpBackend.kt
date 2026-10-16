@@ -71,6 +71,13 @@ class HttpBackend(baseUrl: String) : Backend {
 
     // --- Auth & profile -------------------------------------------------------------------
 
+    override suspend fun requestCode(phone: String) {
+        send<Unit>("POST", "v1/auth/otp", jsonBody(CodeRequestBody(phone)), authenticated = false)
+    }
+
+    override suspend fun confirmCode(phone: String, code: String): String =
+        post<CustomTokenResponse>("v1/auth/otp/verify", jsonBody(CodeConfirmBody(phone, code)), authenticated = false).customToken
+
     override suspend fun verify(): UserProfile =
         post<VerifyResponse>("v1/auth/verify", jsonBody(IdTokenRequest(idToken(forceRefresh = false))), authenticated = false).user.toProfile()
 
@@ -91,9 +98,8 @@ class HttpBackend(baseUrl: String) : Backend {
         return send<ProfileDto>("PATCH", "v1/me", body.toString().toRequestBody(JsonMedia)).toProfile()
     }
 
-    override suspend fun updatePhone(): UserProfile =
-        // A fresh token carries the newly linked phone number.
-        send<ProfileDto>("PATCH", "v1/me/phone", jsonBody(IdTokenRequest(idToken(forceRefresh = true)))).toProfile()
+    override suspend fun updatePhone(phone: String, code: String): UserProfile =
+        send<ProfileDto>("PATCH", "v1/me/phone", jsonBody(CodeConfirmBody(phone, code))).toProfile()
 
     override suspend fun uploadPhoto(jpeg: ByteArray): UserProfile {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)

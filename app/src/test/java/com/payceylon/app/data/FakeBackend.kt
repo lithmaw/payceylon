@@ -76,7 +76,17 @@ class FakeBackend(
         return profile
     }
 
-    override suspend fun updatePhone(): UserProfile = also { call() }.profile
+    override suspend fun requestCode(phone: String) = call()
+    override suspend fun confirmCode(phone: String, code: String): String {
+        call()
+        return "custom-token"
+    }
+
+    override suspend fun updatePhone(phone: String, code: String): UserProfile {
+        call()
+        profile = profile.copy(phone = phone.removePrefix("+94"))
+        return profile
+    }
     override suspend fun uploadPhoto(jpeg: ByteArray): UserProfile = also { call() }.profile
     override suspend fun removePhoto(): UserProfile = also { call() }.profile
     override suspend fun downloadPhoto(url: String): ByteArray = ByteArray(0)

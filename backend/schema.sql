@@ -140,3 +140,12 @@ CREATE TABLE IF NOT EXISTS demo_card_tokens (
     expiry TEXT NOT NULL,
     PRIMARY KEY (user_id, token)
 );
+
+-- One pending sign-in code per number. Only a hash is kept; the code itself goes to the server log.
+CREATE TABLE IF NOT EXISTS otp_codes (
+    phone TEXT PRIMARY KEY,
+    code_hash TEXT NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

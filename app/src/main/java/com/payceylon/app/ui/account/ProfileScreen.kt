@@ -56,10 +56,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.firebase.auth.PhoneAuthCredential
 import com.payceylon.app.R
 import com.payceylon.app.data.ApiException
-import com.payceylon.app.data.CodeRequest
 import com.payceylon.app.data.PhoneAuth
 import com.payceylon.app.ui.auth.PayCeylonButton
 import com.payceylon.app.ui.auth.PayCeylonButtonStyle
@@ -67,7 +65,6 @@ import com.payceylon.app.ui.auth.SriLankanPhoneVisualTransformation
 import com.payceylon.app.ui.auth.maskSriLankanMobileNumber
 import com.payceylon.app.ui.auth.normalizeSriLankanMobileNumber
 import com.payceylon.app.ui.components.PayCeylonTextField
-import com.payceylon.app.ui.components.findActivity
 import com.payceylon.app.ui.components.rememberSubmitState
 import com.payceylon.app.ui.components.tap
 import com.payceylon.app.ui.theme.InterFontFamily
@@ -221,7 +218,6 @@ fun EditProfileFieldScreen(
     var code by rememberSaveable { mutableStateOf("") }
     var verifyingPhone by rememberSaveable { mutableStateOf(false) }
     var codeError by rememberSaveable { mutableStateOf<String?>(null) }
-    var verificationId by rememberSaveable { mutableStateOf<String?>(null) }
     var serverError by remember { mutableStateOf<String?>(null) }
 
     val normalized = normalizeProfileValue(field, value)
@@ -239,30 +235,18 @@ fun EditProfileFieldScreen(
         if (problem == null) saved() else serverError = problem
     }
 
-    /** Moves the account to the new number once Firebase has verified it. */
-    suspend fun changePhone(credential: PhoneAuthCredential) {
-        PhoneAuth.changePhone(credential)
-        account.savePhoneChange()
-        saved()
-    }
-
     fun sendCode() = submit.run {
-        val host = context.findActivity() ?: return@run
-        when (val request = PhoneAuth.requestCode(host, "+94$normalized")) {
-            is CodeRequest.Sent -> {
-                verificationId = request.verificationId
-                code = ""
-                codeError = null
-                verifyingPhone = true
-            }
-            is CodeRequest.Verified -> changePhone(request.credential)
-        }
+        PhoneAuth.requestCode("+94$normalized")
+        code = ""
+        codeError = null
+        verifyingPhone = true
     }
 
+    /** Moves the account to the new number once its code checks out. */
     fun verifyCode() = submit.run {
-        val id = verificationId ?: return@run
         try {
-            changePhone(PhoneAuth.credential(id, code))
+            account.savePhoneChange("+94$normalized", code)
+            saved()
         } catch (e: ApiException) {
             if (e.code == "INVALID_OTP") codeError = e.message else throw e
         }

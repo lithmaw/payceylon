@@ -9,9 +9,10 @@ Railway), signs users in with Firebase phone authentication, and keeps an on-dev
 of the wallet. The API contract is in [`docs/BACKEND_API.md`](docs/BACKEND_API.md). Money,
 cards, banks and crypto are simulated: no real funds move.
 
-**Demo login:** the Firebase project is on the free plan, so sign in with a test number:
-`77 000 0001` (code `111111`) or `77 000 0002` (code `222222`). More can be added in Firebase
-Console → Authentication → Sign-in method → Phone. Real SMS needs the Blaze plan.
+**Demo login:** enter any Sri Lankan mobile number. No SMS is sent: the API prints a fresh
+6-digit code to its log (`OTP for +94771234567: 482913`). Read it with `railway logs` from the
+`backend` folder (after `railway login` and `railway link`) or in the Railway dashboard's
+Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 seconds.
 
 ## Project criteria
 
@@ -21,12 +22,12 @@ Console → Authentication → Sign-in method → Phone. Real SMS needs the Blaz
 | Local database | Room in `data/local/`: last server snapshot (profile, photo, balances, transactions, notifications, cards/banks, settings); the app opens from it instantly and works read-only offline |
 | Hardware features | Camera (CameraX + ML Kit QR scanning), biometric sensor (app unlock) |
 | Remote data source | PayCeylon REST API (`data/HttpBackend.kt`) and Firebase |
-| Authentication | Firebase phone (SMS code) sign-in, verified by the API on every request; biometric app lock |
+| Authentication | Phone + one-time code issued by the API, then Firebase sign-in (custom token) verified by the API on every request; biometric app lock |
 
 ## Features
 
-- **Onboarding and sign-in:** onboarding pages, Sri Lankan phone number entry, SMS code via
-  Firebase with resend, then a one-time profile setup (name and @username required; photo and
+- **Onboarding and sign-in:** onboarding pages, Sri Lankan phone number entry, one-time code
+  (from the server log) with resend, then a one-time profile setup (name and @username required; photo and
   email optional).
 - **Home:** fiat / crypto wallet switcher (full-screen transition, crypto switches the app to a
   dark theme), balance card with hide/show (blurred), month-on-month change pill, linked card
@@ -40,7 +41,7 @@ Console → Authentication → Sign-in method → Phone. Real SMS needs the Blaz
 - **Transactions:** full list with filters, and details with fees, reference, on-chain hash
   (crypto) and a shareable receipt.
 - **Notifications** dropdown on the bell: transactions plus account and security changes.
-- **Settings:** personal details (photo, name, username, phone with SMS check, email),
+- **Settings:** personal details (photo, name, username, phone with code check, email),
   cards & bank accounts (card brand detected from the number, with its logo), biometric unlock,
   security and notification toggles, privacy policy, terms, help, log out.
 - **Live updates:** balances, history and notifications refresh every 5 seconds while the app
@@ -63,10 +64,8 @@ payceylon.firebase.projectId=payceylon-dev-lithma
 ```
 
 For a local backend instead, use `http://<your PC's LAN IP>:8000/` (debug builds allow plain
-HTTP). Firebase phone auth on Android also needs the SHA-1 and SHA-256 of the signing key
-registered in the Firebase project; each computer's debug key is different, so register yours
-(`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`)
-or build the shared APK from one machine.
+HTTP); codes then appear in your terminal running uvicorn. Sign-in uses Firebase custom tokens,
+so no SHA-1 registration is needed: an APK built on any computer works.
 
 ```bash
 ./gradlew :app:assembleDebug            # Windows: .\gradlew.bat :app:assembleDebug
@@ -90,7 +89,7 @@ app/src/main/java/com/payceylon/app/
 ├── data/
 │   ├── Backend.kt               What the screens need from the server (interface), ApiException
 │   ├── HttpBackend.kt           OkHttp + kotlinx.serialization client for the API
-│   ├── PhoneAuth.kt             Firebase phone verification as suspend calls
+│   ├── PhoneAuth.kt             Code request/confirm via the API, then Firebase custom-token sign-in
 │   └── local/                   Room database (entities, DAO) and the WalletCache over it
 └── ui/
     ├── PayCeylonApp.kt          Navigation, session states, polling, app lock, offline note
@@ -108,8 +107,10 @@ images/                          Source design assets from Figma
 
 ## How data flows
 
-1. Sign-in: Firebase verifies the phone number; the app sends the Firebase ID token to
-   `POST /v1/auth/verify`, which creates or loads the account.
+1. Sign-in: `POST /v1/auth/otp` logs a random code for the number; `POST /v1/auth/otp/verify`
+   checks it and returns a Firebase custom token for that number's Firebase user. The app signs
+   in to Firebase with it and sends the Firebase ID token to `POST /v1/auth/verify`, which
+   creates or loads the account.
 2. Every request carries the ID token; the API verifies it with the Firebase Admin SDK.
 3. At launch the wallet is shown from Room immediately, then refreshed from the API; each
    successful refresh is written back to Room. Logging out clears Room.
@@ -138,7 +139,7 @@ images/                          Source design assets from Figma
 ## Known gaps
 
 - Swap rates are fixed demo prices; no real bank, card or blockchain transfers happen.
-- Real SMS codes need the Firebase Blaze plan; until then use the test numbers above.
+- Codes go to the server log instead of SMS; a real build would send them through an SMS provider.
 - No push notifications (FCM); the app polls every 5 seconds while open.
 
 ## Credits

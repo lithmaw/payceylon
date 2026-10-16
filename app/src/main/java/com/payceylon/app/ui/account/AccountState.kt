@@ -323,9 +323,9 @@ class AccountState(
         e.message
     }
 
-    /** Saves the number the Firebase user was just moved to. */
-    suspend fun savePhoneChange() {
-        applyProfile(backend.updatePhone())
+    /** Moves the account to [phone] (E.164), proven by the [code] requested for it. */
+    suspend fun savePhoneChange(phone: String, code: String) {
+        applyProfile(backend.updatePhone(phone, code))
         refreshNotificationsQuietly()
     }
 
