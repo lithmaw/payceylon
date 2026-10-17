@@ -16,6 +16,9 @@ import com.payceylon.app.data.local.WalletCache
 import com.payceylon.app.data.local.WalletSnapshot
 import com.payceylon.app.ui.account.AccountSetting
 import com.payceylon.app.ui.account.AccountState
+import com.payceylon.app.ui.bills.Bill
+import com.payceylon.app.ui.bills.Biller
+import com.payceylon.app.ui.bills.SavedBiller
 import com.payceylon.app.ui.nearby.NearbyPlaces
 import com.payceylon.app.ui.account.PaymentMethod
 import kotlinx.coroutines.CancellationException
@@ -43,10 +46,12 @@ enum class TransactionDirection {
     TopUp,
     /** LKR paid out to a linked bank account. */
     Withdrawal,
+    /** LKR paid to a biller (electricity, water, mobile reload, internet / TV). */
+    Bill,
     ;
 
     /** True when money left the wallet. */
-    val isDebit: Boolean get() = this == Outgoing || this == Withdrawal
+    val isDebit: Boolean get() = this == Outgoing || this == Withdrawal || this == Bill
 
     /** Top-ups and withdrawals move money to or from an outside account, not a PayCeylon user. */
     val isExternal: Boolean get() = this == TopUp || this == Withdrawal
@@ -139,6 +144,7 @@ data class WalletTransaction(
             TransactionDirection.Swap -> "Swap $currency to $toCurrency"
             TransactionDirection.TopUp -> "Top up from $counterpartyName"
             TransactionDirection.Withdrawal -> "Withdraw to $counterpartyName"
+            TransactionDirection.Bill -> "Payment to $counterpartyName"
         }
 
     /** How this transaction changed the balance of [asset] (negative when money left). */
@@ -148,7 +154,8 @@ data class WalletTransaction(
             change += when (direction) {
                 TransactionDirection.Incoming, TransactionDirection.TopUp -> amount
                 TransactionDirection.Swap -> -amount
-                TransactionDirection.Outgoing, TransactionDirection.Withdrawal -> -(amount + (fee ?: BigDecimal.ZERO))
+                TransactionDirection.Outgoing, TransactionDirection.Withdrawal, TransactionDirection.Bill ->
+                    -(amount + (fee ?: BigDecimal.ZERO))
             }
         }
         if (direction == TransactionDirection.Swap && toCurrency == asset.code) {
@@ -466,6 +473,14 @@ class WalletViewModel(
 
     suspend fun withdraw(amount: BigDecimal, bank: PaymentMethod, idempotencyKey: String): WalletTransaction =
         backend.withdraw(amount, bank.id, idempotencyKey).also { recorded(it) }
+
+    suspend fun payBill(biller: Biller, account: String, amount: BigDecimal, idempotencyKey: String): WalletTransaction =
+        backend.payBill(biller.id, account, amount, idempotencyKey).also { recorded(it) }
+
+    suspend fun billers(): List<Biller> = backend.billers()
+    suspend fun lookupBill(biller: Biller, account: String): Bill = backend.lookupBill(biller.id, account)
+    suspend fun savedBillers(): List<SavedBiller> = backend.savedBillers()
+    suspend fun removeSavedBiller(saved: SavedBiller) = backend.removeSavedBiller(saved.billerId, saved.account)
 
     private suspend fun recorded(tx: WalletTransaction) {
         if (transactions.none { it.id == tx.id }) transactions.add(0, tx)

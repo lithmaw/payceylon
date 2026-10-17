@@ -149,3 +149,18 @@ CREATE TABLE IF NOT EXISTS otp_codes (
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Bill payments: transactions gained the BILL direction.
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_direction_check;
+ALTER TABLE transactions ADD CONSTRAINT transactions_direction_check
+    CHECK (direction IN ('OUTGOING', 'INCOMING', 'SWAP', 'TOP_UP', 'WITHDRAWAL', 'BILL'));
+
+-- Billers a user has paid, for one-tap repeat payments.
+CREATE TABLE IF NOT EXISTS saved_billers (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    biller_id TEXT NOT NULL,
+    account TEXT NOT NULL,
+    last_amount NUMERIC(24, 8) NOT NULL,
+    last_paid_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, biller_id, account)
+);

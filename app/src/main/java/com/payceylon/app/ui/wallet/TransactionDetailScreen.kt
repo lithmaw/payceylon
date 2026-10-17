@@ -185,6 +185,11 @@ fun TransactionDetailScreen(
                         "PayCeylon fee",
                         "${asset.code} ${SwapRates.fee(asset, transaction.amount).toAmountString(asset)} (0.5%)",
                     )
+                } else if (transaction.direction == TransactionDirection.Bill) {
+                    DetailRow("Paid to", transaction.counterpartyName)
+                    DetailRow("Account", transaction.counterpartyHandle)
+                    DetailRow("Wallet", "Fiat Wallet")
+                    DetailRow("Fee", "Free")
                 } else if (transaction.direction.isExternal) {
                     val isTopUp = transaction.direction == TransactionDirection.TopUp
                     DetailRow(
@@ -255,7 +260,7 @@ fun TransactionDetailScreen(
 private fun headlineAmount(transaction: WalletTransaction): String {
     val asset = Asset.fromCode(transaction.currency) ?: Asset.LKR
     return when (transaction.direction) {
-        TransactionDirection.Outgoing, TransactionDirection.Withdrawal ->
+        TransactionDirection.Outgoing, TransactionDirection.Withdrawal, TransactionDirection.Bill ->
             "-${asset.code} ${transaction.amount.toAmountString(asset)}"
         TransactionDirection.Incoming, TransactionDirection.TopUp ->
             "+${asset.code} ${transaction.amount.toAmountString(asset)}"

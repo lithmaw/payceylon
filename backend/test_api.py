@@ -421,6 +421,63 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 204, response.text)
         self.assertEqual(len(self.revoked), 1)
 
+    async def test_bill_lookup_and_payment_debit_save_and_notify(self):
+        token, _ = await self.sign_up(name="Nimal Silva")
+        billers = (await self.client.get("/v1/billers", headers=self.auth(token))).json()["items"]
+        self.assertIn("ceb", [biller["id"] for biller in billers])
+        self.assertNotIn("accountPattern", billers[0])
+        bill = (await self.client.get("/v1/billers/ceb/bill", headers=self.auth(token),
+                                      params={"account": "12345 67890"})).json()
+        self.assertEqual((bill["account"], bill["accountName"]), ("1234567890", "Nimal Silva"))
+        again = (await self.client.get("/v1/billers/ceb/bill", headers=self.auth(token),
+                                       params={"account": "1234567890"})).json()
+        self.assertEqual(bill["amountDue"], again["amountDue"])  # stable for the month
+
+        before = await self.balance(token)
+        body = {"billerId": "ceb", "account": "1234567890", "amount": bill["amountDue"]}
+        paid = await self.client.post("/v1/bills/payments", headers=self.auth(token, "bill-1"), json=body)
+        self.assertEqual(paid.status_code, 201, paid.text)
+        tx = paid.json()
+        self.assertEqual((tx["direction"], tx["counterparty"]["name"], tx["counterparty"]["handle"]),
+                         ("BILL", "CEB", "1234567890"))
+        retried = await self.client.post("/v1/bills/payments", headers=self.auth(token, "bill-1"), json=body)
+        self.assertEqual(retried.json()["id"], tx["id"])
+        self.assertEqual(await self.balance(token), before - Decimal(bill["amountDue"]))
+
+        saved = (await self.client.get("/v1/bills/saved", headers=self.auth(token))).json()["items"]
+        self.assertEqual([(s["billerId"], s["account"], s["lastAmount"]) for s in saved],
+                         [("ceb", "1234567890", bill["amountDue"])])
+        notes = (await self.client.get("/v1/notifications", headers=self.auth(token))).json()["items"]
+        self.assertEqual(notes[0]["title"], "Bill paid")
+        listed = (await self.client.get("/v1/transactions", headers=self.auth(token), params={"wallet": "FIAT"})).json()
+        self.assertEqual(listed["items"][0]["id"], tx["id"])
+
+        removed = await self.client.delete("/v1/bills/saved/ceb/1234567890", headers=self.auth(token))
+        self.assertEqual(removed.status_code, 204)
+        self.assertEqual((await self.client.get("/v1/bills/saved", headers=self.auth(token))).json()["items"], [])
+
+    async def test_mobile_reload_normalises_number_and_checks_limits(self):
+        token, _ = await self.sign_up()
+        no_bill = await self.client.get("/v1/billers/dialog/bill", headers=self.auth(token), params={"account": "0771234567"})
+        self.assertEqual(no_bill.json()["error"]["code"], "NO_BILL")
+        too_small = await self.client.post("/v1/bills/payments", headers=self.auth(token, "r-0"),
+                                           json={"billerId": "dialog", "account": "0771234567", "amount": "10.00"})
+        self.assertEqual(too_small.status_code, 400)
+        paid = await self.client.post("/v1/bills/payments", headers=self.auth(token, "r-1"),
+                                      json={"billerId": "dialog", "account": "+94 77 123 4567", "amount": "500.00"})
+        self.assertEqual(paid.status_code, 201, paid.text)
+        self.assertEqual(paid.json()["counterparty"]["handle"], "0771234567")
+
+    async def test_bill_rejects_bad_account_unknown_biller_and_overdraft(self):
+        token, _ = await self.sign_up()
+        bad = await self.client.get("/v1/billers/ceb/bill", headers=self.auth(token), params={"account": "123"})
+        self.assertEqual((bad.status_code, bad.json()["error"]["code"]), (400, "INVALID_ACCOUNT"))
+        unknown = await self.client.get("/v1/billers/nope/bill", headers=self.auth(token), params={"account": "1234567890"})
+        self.assertEqual(unknown.status_code, 404)
+        broke = await self.client.post("/v1/bills/payments", headers=self.auth(token, "b-9"),
+                                       json={"billerId": "ceb", "account": "1234567890", "amount": "400000.00"})
+        self.assertEqual(broke.json()["error"]["code"], "INSUFFICIENT_FUNDS")
+
     async def test_nearby_places_merge_agents_and_osm_sorted_by_distance(self):
         token, _ = await self.sign_up()
         elements = [

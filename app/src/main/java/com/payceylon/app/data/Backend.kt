@@ -9,6 +9,9 @@ import com.payceylon.app.ui.account.AppNotification
 import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.UserProfile
+import com.payceylon.app.ui.bills.Bill
+import com.payceylon.app.ui.bills.Biller
+import com.payceylon.app.ui.bills.SavedBiller
 import com.payceylon.app.ui.nearby.NearbyPlaces
 import com.payceylon.app.ui.wallet.Asset
 import com.payceylon.app.ui.wallet.CryptoToken
@@ -76,6 +79,16 @@ interface Backend {
     suspend fun swap(from: Asset, to: Asset, amount: BigDecimal, idempotencyKey: String): WalletTransaction
     suspend fun topUp(amount: BigDecimal, methodId: String, idempotencyKey: String): WalletTransaction
     suspend fun withdraw(amount: BigDecimal, bankId: String, idempotencyKey: String): WalletTransaction
+
+    suspend fun billers(): List<Biller>
+
+    /** The amount due on an account (bill billers only, not mobile reloads). */
+    suspend fun lookupBill(billerId: String, account: String): Bill
+    suspend fun payBill(billerId: String, account: String, amount: BigDecimal, idempotencyKey: String): WalletTransaction
+
+    /** Accounts paid before, most recent first. */
+    suspend fun savedBillers(): List<SavedBiller>
+    suspend fun removeSavedBiller(billerId: String, account: String)
 
     suspend fun paymentMethods(): List<PaymentMethod>
     suspend fun addCard(token: String, holder: String, brand: String, last4: String, expiry: String): PaymentMethod

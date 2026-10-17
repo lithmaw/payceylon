@@ -30,15 +30,19 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
   (from the server log) with resend, then a one-time profile setup (name and @username required; photo and
   email optional).
 - **Home:** fiat / crypto wallet switcher (full-screen transition, crypto switches the app to a
-  dark theme), balance card with hide/show (blurred), month-on-month change pill, linked card
-  chip, recent transactions, and a glass action bar that drags open for more actions.
+  dark theme), balance card with hide/show (blurred), month-on-month change pill, Nearby and
+  Pay bills shortcuts (fiat) or the deposit address (crypto), recent transactions, and a glass
+  action bar that drags open for more actions.
 - **Send:** QR scanner (CameraX + ML Kit) or search by username, amount keypad, balance and
   network-fee checks.
 - **Receive:** branded QR code and shareable payment link, with an optional requested amount.
 - **Swap** between LKR and tokens at indicative rates (0.5% fee).
 - **Top Up / Withdraw** (fiat only): top up from a linked card (1.5% fee) or bank (free), withdraw
   to a bank (LKR 25 fee). Crypto is bought and sold by swapping with LKR.
-- **Nearby** (fiat wallet, in the action sheet): map of ATMs and bank branches (real
+- **Pay bills** (fiat wallet): CEB, LECO, Water Board, SLT Fibre and Dialog TV bills (simulated
+  amount due, editable) and Dialog / Mobitel / Hutch reloads, paid from LKR with no fee. Paid
+  accounts appear under Recent for one-tap repeat payments.
+- **Nearby** (fiat wallet, on the balance card): map of ATMs and bank branches (real
   OpenStreetMap data) and PayCeylon cash agents (simulated, around Kurunegala) within 3 km of
   the phone's GPS position, with All / Agents / ATMs / Banks filters, a list by distance,
   "Search this area" after panning, and walking directions in Google Maps. Without location it
@@ -101,6 +105,7 @@ app/src/main/java/com/payceylon/app/
     ├── auth/                    Onboarding, OTP, profile setup, connection-problem screen
     ├── wallet/                  Home, Send, Receive, Swap, Top Up, Withdraw, transactions
     │   └── WalletViewModel.kt   Session, wallet state, actions; API first, Room as the local copy
+    ├── bills/                   Bill payments and mobile reloads
     ├── nearby/                  Map of ATMs, banks and agents (osmdroid + GPS)
     ├── account/                 Settings, profile, cards & banks, notifications, legal
     │   └── AccountState.kt      Profile, linked accounts, settings, notifications
@@ -146,6 +151,7 @@ images/                          Source design assets from Figma
 
 - Swap rates are fixed demo prices; no real bank, card or blockchain transfers happen.
 - Codes go to the server log instead of SMS; a real build would send them through an SMS provider.
+- Bills and reloads are simulated; a real build would connect to each biller or a bill aggregator.
 - No push notifications (FCM); the app polls every 5 seconds while open.
 
 ## Credits

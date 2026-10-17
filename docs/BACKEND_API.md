@@ -76,7 +76,7 @@ App: `Asset`, `CryptoToken` in `ui/wallet/WalletViewModel.kt`.
 }
 ```
 
-- `direction`: `OUTGOING` | `INCOMING` | `SWAP` | `TOP_UP` | `WITHDRAWAL`
+- `direction`: `OUTGOING` | `INCOMING` | `SWAP` | `TOP_UP` | `WITHDRAWAL` | `BILL`
 - `status`: `PENDING` | `COMPLETED` | `FAILED` (the app currently shows everything as completed)
 - Swaps: `currency`/`amount` is what was paid, `toCurrency`/`toAmount` what arrived.
 - Top-ups / withdrawals: `counterparty` is the linked account, e.g.
@@ -247,6 +247,34 @@ with LKR, and leaves the app through Send.
   `PENDING`, then update to `COMPLETED` and send a notification.
 
 App: `WalletViewModel.topUp`, `withdraw`, `WalletFees`.
+
+## Bills (fiat wallet only)
+
+| Method | Path | Body | Response |
+| --- | --- | --- | --- |
+| GET | `/billers` | – | `{ "items": [Biller] }` |
+| GET | `/billers/{id}/bill?account=1234567890` | – | `{ "billerId": "ceb", "account": "1234567890", "accountName": "Kasun Perera", "amountDue": "2450.00", "dueDate": 1730592000000 }` |
+| POST | `/bills/payments` | `{ "billerId": "ceb", "account": "1234567890", "amount": "2450.00" }` | Transaction (`BILL`) |
+| GET | `/bills/saved` | – | `{ "items": [{ "billerId": "ceb", "account": "1234567890", "lastAmount": "2450.00", "lastPaidAt": 1729… }] }` |
+| DELETE | `/bills/saved/{billerId}/{account}` | – | `204` |
+
+```json
+{ "id": "ceb", "name": "Ceylon Electricity Board", "shortName": "CEB", "category": "ELECTRICITY",
+  "kind": "BILL", "accountLabel": "Account number", "accountHint": "10 digits" }
+```
+
+- Billers: CEB, LECO (`ELECTRICITY`), Water Board (`WATER`), Dialog, Mobitel, Hutch (`MOBILE`,
+  `kind: RELOAD`), SLT Fibre, Dialog TV (`INTERNET_TV`). Simulated: nothing reaches the companies.
+- Accounts are digits only (spaces, `/` and `-` are stripped); mobile numbers are `07XXXXXXXX`
+  (`+94` / `94` forms are accepted and normalised). A wrong format is `400 INVALID_ACCOUNT`.
+- `BILL` billers have a simulated amount due, stable per account for the calendar month; the user
+  may pay any amount from LKR 1.00 to 500,000.00. `RELOAD` billers have no bill (`400 NO_BILL`)
+  and take LKR 20.00 to 10,000.00.
+- Payment needs an `Idempotency-Key`; no fee. It debits LKR, records a `BILL` transaction
+  (`counterparty` is `{ "name": "CEB", "handle": "<account>" }`), sends a `TRANSACTION`
+  notification and saves the account for repeat payments.
+
+App: `BillsScreen`, `WalletViewModel.payBill`.
 
 ## Payment methods
 

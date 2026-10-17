@@ -1340,6 +1340,154 @@ async def withdraw(
     return result
 
 
+# Billers. BILL billers have a (simulated) amount due per account; RELOAD billers take any amount
+# for a mobile number. Nothing is sent to the real companies.
+BILLERS = {
+    "ceb": {"name": "Ceylon Electricity Board", "shortName": "CEB", "category": "ELECTRICITY", "kind": "BILL",
+            "accountLabel": "Account number", "accountPattern": r"\d{10}", "accountHint": "10 digits"},
+    "leco": {"name": "Lanka Electricity Company", "shortName": "LECO", "category": "ELECTRICITY", "kind": "BILL",
+             "accountLabel": "Account number", "accountPattern": r"\d{10}", "accountHint": "10 digits"},
+    "nwsdb": {"name": "National Water Supply & Drainage Board", "shortName": "Water Board", "category": "WATER",
+              "kind": "BILL", "accountLabel": "Account number", "accountPattern": r"\d{10,12}",
+              "accountHint": "10 to 12 digits"},
+    "dialog": {"name": "Dialog", "shortName": "Dialog", "category": "MOBILE", "kind": "RELOAD",
+               "accountLabel": "Mobile number", "accountPattern": r"07\d{8}", "accountHint": "07X XXX XXXX"},
+    "mobitel": {"name": "SLT-Mobitel", "shortName": "Mobitel", "category": "MOBILE", "kind": "RELOAD",
+                "accountLabel": "Mobile number", "accountPattern": r"07\d{8}", "accountHint": "07X XXX XXXX"},
+    "hutch": {"name": "Hutch", "shortName": "Hutch", "category": "MOBILE", "kind": "RELOAD",
+              "accountLabel": "Mobile number", "accountPattern": r"07\d{8}", "accountHint": "07X XXX XXXX"},
+    "slt": {"name": "SLT-Mobitel Fibre", "shortName": "SLT Fibre", "category": "INTERNET_TV", "kind": "BILL",
+            "accountLabel": "Account number", "accountPattern": r"\d{10}", "accountHint": "10 digits"},
+    "dialogtv": {"name": "Dialog Television", "shortName": "Dialog TV", "category": "INTERNET_TV", "kind": "BILL",
+                 "accountLabel": "Account number", "accountPattern": r"\d{8}", "accountHint": "8 digits"},
+}
+BILL_MAX = Decimal("500000.00")
+RELOAD_MIN = Decimal("20.00")
+RELOAD_MAX = Decimal("10000.00")
+
+
+class BillPayBody(Body):
+    biller_id: str = Field(alias="billerId")
+    account: str
+    amount: str
+
+
+def biller_account(biller_id: str, account: str) -> tuple[dict[str, Any], str]:
+    biller = BILLERS.get(biller_id)
+    if biller is None:
+        raise problem(404, "BILLER_NOT_FOUND", "That biller isn't supported.")
+    cleaned = re.sub(r"[\s/-]", "", account)
+    if biller["kind"] == "RELOAD" and re.fullmatch(r"(\+94|94)?7\d{8}", cleaned):
+        cleaned = "0" + cleaned[-9:]
+    if not re.fullmatch(biller["accountPattern"], cleaned):
+        raise problem(400, "INVALID_ACCOUNT", f"Enter a valid {biller['accountLabel'].lower()} ({biller['accountHint']}).", "account")
+    return biller, cleaned
+
+
+def bill_due(biller_id: str, account: str) -> tuple[Decimal, datetime]:
+    """The simulated outstanding bill: stable per account and month."""
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    seed = int.from_bytes(hashlib.sha256(f"bill:{biller_id}:{account}:{month}".encode()).digest()[:4], "big")
+    due = Decimal(800 + seed % 9200) + Decimal(seed % 4) * Decimal("0.25")
+    due_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=5 + seed % 20)
+    return due.quantize(Decimal("0.01")), due_date
+
+
+def biller_json(biller_id: str) -> dict[str, Any]:
+    biller = BILLERS[biller_id]
+    return {"id": biller_id, **{key: value for key, value in biller.items() if key != "accountPattern"}}
+
+
+@app.get("/v1/billers")
+async def list_billers(_user: User) -> dict[str, list[dict[str, Any]]]:
+    return {"items": [biller_json(biller_id) for biller_id in BILLERS]}
+
+
+@app.get("/v1/billers/{biller_id}/bill")
+async def lookup_bill(biller_id: str, user: User, account: str = Query(max_length=20)) -> dict[str, Any]:
+    biller, cleaned = biller_account(biller_id, account)
+    if biller["kind"] != "BILL":
+        raise problem(400, "NO_BILL", "Mobile reloads have no bill; enter any amount.")
+    due, due_date = bill_due(biller_id, cleaned)
+    return {
+        "billerId": biller_id,
+        "account": cleaned,
+        "accountName": user["name"],
+        "amountDue": money(due, "LKR"),
+        "dueDate": int(due_date.timestamp() * 1000),
+    }
+
+
+@app.post("/v1/bills/payments", status_code=201)
+async def pay_bill(
+    body: BillPayBody,
+    user: User,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> dict[str, Any]:
+    biller, account = biller_account(body.biller_id, body.account)
+    value = amount(body.amount, "LKR")
+    low, high = (RELOAD_MIN, RELOAD_MAX) if biller["kind"] == "RELOAD" else (Decimal("1.00"), BILL_MAX)
+    if not low <= value <= high:
+        raise problem(400, "VALIDATION_FAILED", f"Enter between LKR {money(low, 'LKR')} and LKR {money(high, 'LKR')}.", "amount")
+    async with app.state.pool.acquire() as conn, conn.transaction():
+        previous = await prior_response(conn, user["id"], "bill", idempotency_key)
+        if previous:
+            return previous
+        balance = await conn.fetchval(
+            "SELECT balance FROM wallet_balances WHERE user_id=$1 AND asset='LKR' FOR UPDATE", user["id"],
+        )
+        if balance is None or balance < value:
+            raise problem(402, "INSUFFICIENT_FUNDS", "Insufficient LKR balance.")
+        await conn.execute(
+            "UPDATE wallet_balances SET balance=balance-$2 WHERE user_id=$1 AND asset='LKR'", user["id"], value,
+        )
+        tx = await add_transaction(
+            conn, user_id=user["id"], direction="BILL", currency="LKR", value=value,
+            wallet="FIAT", name=biller["shortName"], handle=account,
+        )
+        await conn.execute(
+            """INSERT INTO saved_billers(user_id,biller_id,account,last_amount,last_paid_at)
+            VALUES($1,$2,$3,$4,now())
+            ON CONFLICT (user_id,biller_id,account) DO UPDATE SET last_amount=$4, last_paid_at=now()""",
+            user["id"], body.biller_id, account, value,
+        )
+        what = "Reload" if biller["kind"] == "RELOAD" else "Bill paid"
+        await emit_notice(
+            conn, user["id"], "TRANSACTION", what,
+            f"LKR {money(value, 'LKR')} to {biller['shortName']} ({account}). Simulated: no real payment was made.",
+            tx["id"],
+        )
+        result = await transaction_json(conn, tx)
+        await save_response(conn, user["id"], "bill", idempotency_key or "", result)
+    return result
+
+
+@app.get("/v1/bills/saved")
+async def saved_billers(user: User) -> dict[str, list[dict[str, Any]]]:
+    rows = await app.state.pool.fetch(
+        "SELECT * FROM saved_billers WHERE user_id=$1 ORDER BY last_paid_at DESC LIMIT 20", user["id"],
+    )
+    return {
+        "items": [
+            {
+                "billerId": row["biller_id"],
+                "account": row["account"],
+                "lastAmount": money(row["last_amount"], "LKR"),
+                "lastPaidAt": int(row["last_paid_at"].timestamp() * 1000),
+            }
+            for row in rows
+            if row["biller_id"] in BILLERS
+        ],
+    }
+
+
+@app.delete("/v1/bills/saved/{biller_id}/{account}", status_code=204)
+async def remove_saved_biller(biller_id: str, account: str, user: User) -> None:
+    await app.state.pool.execute(
+        "DELETE FROM saved_billers WHERE user_id=$1 AND biller_id=$2 AND account=$3", user["id"], biller_id, account,
+    )
+
+
 @app.get("/v1/notifications")
 async def list_notifications(
     user: User,

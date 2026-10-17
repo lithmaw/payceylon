@@ -156,6 +156,38 @@ internal data class PlaceDto(
 internal data class PlacesResponse(val items: List<PlaceDto>, val banksAvailable: Boolean = true)
 
 @Serializable
+internal data class BillerDto(
+    val id: String,
+    val name: String,
+    val shortName: String,
+    val category: String,
+    val kind: String,
+    val accountLabel: String,
+    val accountHint: String,
+)
+
+@Serializable
+internal data class BillersResponse(val items: List<BillerDto>)
+
+@Serializable
+internal data class BillDto(
+    val billerId: String,
+    val account: String,
+    val accountName: String,
+    val amountDue: String,
+    val dueDate: Long,
+)
+
+@Serializable
+internal data class BillPayBody(val billerId: String, val account: String, val amount: String)
+
+@Serializable
+internal data class SavedBillerDto(val billerId: String, val account: String, val lastAmount: String, val lastPaidAt: Long)
+
+@Serializable
+internal data class SavedBillersResponse(val items: List<SavedBillerDto>)
+
+@Serializable
 internal data class ErrorDto(val code: String, val message: String, val field: String? = null)
 
 @Serializable

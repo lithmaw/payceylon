@@ -92,9 +92,6 @@ import com.payceylon.app.ui.theme.PriceRed
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
-import com.payceylon.app.ui.account.CardBrand
-import com.payceylon.app.ui.account.CardLogo
-import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.AppNotification
 import com.payceylon.app.ui.account.NotificationsPanel
 import com.payceylon.app.ui.account.ProfileAvatar
@@ -138,6 +135,7 @@ fun HomeScreen(
     onWithdraw: () -> Unit,
     /** Map of ATMs, banks and PayCeylon agents. */
     onNearby: () -> Unit,
+    onBills: () -> Unit,
     onTransactionClick: (WalletTransaction) -> Unit,
     onSeeAllTransactions: () -> Unit,
     /** Profile photo for the header avatar; null shows the default. */
@@ -151,10 +149,6 @@ fun HomeScreen(
     hideBalanceByDefault: Boolean,
     /** Percentage change in an asset's balance over the last month, or null if unknown. */
     monthlyChangeOf: (Asset) -> BigDecimal?,
-    /** Linked cards and the one shown on the fiat balance card. */
-    cards: List<PaymentMethod>,
-    primaryCard: PaymentMethod?,
-    onPrimaryCardChange: (PaymentMethod) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var isBalanceHidden by rememberSaveable { mutableStateOf(hideBalanceByDefault) }
@@ -261,7 +255,7 @@ fun HomeScreen(
                     if (isCrypto) {
                         TokenAddressRow(token = selectedToken, address = addressOf(selectedToken), onTokenChange = onTokenChange)
                     } else {
-                        FiatAccountRow(cards = cards, selected = primaryCard, onSelect = onPrimaryCardChange)
+                        FiatShortcutRow(onNearby = onNearby, onBills = onBills)
                     }
                 }
             }
@@ -321,7 +315,6 @@ fun HomeScreen(
             onSwap = onSwap,
             onTopUp = onTopUp,
             onWithdraw = onWithdraw,
-            onNearby = onNearby,
             isCrypto = isCrypto,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
@@ -645,86 +638,49 @@ private fun BalanceCard(
     }
 }
 
-/**
- * Fiat footer from Figma: masked account number and the linked card. The card chip only
- * opens a picker when there is more than one card to choose from.
- */
+/** Fiat footer: shortcuts to the map of ATMs and agents, and to bill payments. */
 @Composable
-private fun FiatAccountRow(cards: List<PaymentMethod>, selected: PaymentMethod?, onSelect: (PaymentMethod) -> Unit) {
-    var isMenuOpen by remember { mutableStateOf(false) }
-    val canChoose = cards.size > 1
+private fun FiatShortcutRow(onNearby: () -> Unit, onBills: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = "Account Number:",
-                color = LocalWalletColors.current.contentSecondary,
-                fontFamily = InterFontFamily,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = "**** **** 3746",
-                color = LocalWalletColors.current.content,
-                fontFamily = InterFontFamily,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-            )
-        }
-        if (selected != null) {
-            Box {
-                Row(
-                    modifier = Modifier
-                        .then(
-                            if (canChoose) {
-                                Modifier.bounceClick(role = Role.DropdownList, pressedScale = 0.95f) { isMenuOpen = true }
-                            } else {
-                                Modifier
-                            },
-                        )
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(LocalWalletColors.current.subtle)
-                        .padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    CardBrandMark(selected)
-                    Text(
-                        text = selected.last4,
-                        color = LocalWalletColors.current.content,
-                        fontFamily = InterFontFamily,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    if (canChoose) {
-                        Spacer(Modifier.width(2.dp))
-                        Image(
-                            painter = painterResource(R.drawable.ic_chevron_up_small),
-                            colorFilter = ColorFilter.tint(LocalWalletColors.current.content),
-                            contentDescription = "Choose card",
-                            modifier = Modifier
-                                .size(width = 9.5.dp, height = 5.5.dp)
-                                .rotate(if (isMenuOpen) 0f else 180f),
-                        )
-                    }
-                }
-                PayCeylonDropdownMenu(
-                    expanded = isMenuOpen,
-                    onDismissRequest = { isMenuOpen = false },
-                    options = cards,
-                    selected = selected,
-                    onSelect = onSelect,
-                    label = { it.title },
-                    supportingText = { it.detail },
-                    leading = { CardLogo(it.brand) },
-                    anchor = DropdownAnchor.End,
-                    width = 260.dp,
-                )
-            }
-        }
+        ShortcutPill(label = "Nearby", icon = R.drawable.ic_location, onClick = onNearby, modifier = Modifier.weight(1f))
+        ShortcutPill(label = "Pay bills", icon = R.drawable.ic_bills, onClick = onBills, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun ShortcutPill(
+    label: String,
+    @DrawableRes icon: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalWalletColors.current
+    Row(
+        modifier = modifier
+            .bounceClick(pressedScale = 0.95f, onClick = onClick)
+            .height(46.dp)
+            .clip(RoundedCornerShape(50))
+            .background(colors.subtle)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+    ) {
+        Image(
+            painter = painterResource(icon),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            colorFilter = ColorFilter.tint(PayCeylonPrimary),
+        )
+        Text(
+            text = label,
+            color = colors.content,
+            fontFamily = InterFontFamily,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -804,8 +760,9 @@ internal fun TransactionRow(
                     Text(
                         text = when {
                             isSwap -> "${transaction.currency} \u2192 ${transaction.toCurrency}"
-                            // Top-ups and withdrawals show the masked account or address.
-                            transaction.direction.isExternal -> transaction.counterpartyHandle
+                            // Top-ups, withdrawals and bills show the masked account or account number.
+                            transaction.direction.isExternal || transaction.direction == TransactionDirection.Bill ->
+                                transaction.counterpartyHandle
                             else -> "@${transaction.counterpartyHandle}"
                         },
                         style = TrimmedText,
@@ -983,8 +940,7 @@ private data class ExtraAction(
 
 /**
  * Top Up and Withdraw move LKR to and from cards and banks, so they are fiat-only; crypto is
- * bought and sold by swapping with LKR. Nearby (ATMs, banks, cash agents) is about cash, so
- * it is fiat-only too.
+ * bought and sold by swapping with LKR.
  */
 private fun extraActions(isCrypto: Boolean) = if (isCrypto) {
     listOf(ExtraAction("Swap", R.drawable.ic_exchange))
@@ -993,7 +949,6 @@ private fun extraActions(isCrypto: Boolean) = if (isCrypto) {
         ExtraAction("Top Up", R.drawable.ic_top_up),
         ExtraAction("Swap", R.drawable.ic_exchange),
         ExtraAction("Withdraw", R.drawable.ic_withdraw),
-        ExtraAction("Nearby", R.drawable.ic_location),
     )
 }
 
@@ -1006,7 +961,6 @@ private fun ActionBar(
     onSwap: () -> Unit,
     onTopUp: () -> Unit,
     onWithdraw: () -> Unit,
-    onNearby: () -> Unit,
     isCrypto: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -1161,7 +1115,6 @@ private fun ActionBar(
                                         "Swap" -> onSwap()
                                         "Top Up" -> onTopUp()
                                         "Withdraw" -> onWithdraw()
-                                        "Nearby" -> onNearby()
                                         else -> Unit
                                     }
                                 },
@@ -1226,20 +1179,5 @@ private fun PillActionButton(
             fontWeight = FontWeight.SemiBold,
             letterSpacing = (-0.32).sp,
         )
-    }
-}
-
-/** The card network's logo; the Visa wordmark is tinted white on the dark crypto theme. */
-@Composable
-private fun CardBrandMark(card: PaymentMethod) {
-    if (card.brand == CardBrand.Visa || card.brand == null) {
-        Image(
-            painter = painterResource(R.drawable.ic_visa),
-            colorFilter = if (LocalWalletColors.current.isDark) ColorFilter.tint(Color.White) else null,
-            contentDescription = "Visa",
-            modifier = Modifier.size(width = 35.dp, height = 11.dp),
-        )
-    } else {
-        CardLogo(card.brand, maxWidth = 40.dp, maxHeight = 16.dp)
     }
 }

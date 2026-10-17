@@ -169,6 +169,7 @@ internal fun TransactionGlyph(direction: TransactionDirection, size: Dp, modifie
         TransactionDirection.Swap -> R.drawable.ic_exchange to "Swapped"
         TransactionDirection.TopUp -> R.drawable.ic_top_up to "Top up"
         TransactionDirection.Withdrawal -> R.drawable.ic_withdraw to "Withdrawal"
+        TransactionDirection.Bill -> R.drawable.ic_bills to "Bill payment"
     }
     Image(
         painter = painterResource(icon),

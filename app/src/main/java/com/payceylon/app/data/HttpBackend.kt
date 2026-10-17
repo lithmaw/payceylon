@@ -9,6 +9,10 @@ import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.PaymentMethodType
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.UserProfile
+import com.payceylon.app.ui.bills.Bill
+import com.payceylon.app.ui.bills.BillCategory
+import com.payceylon.app.ui.bills.Biller
+import com.payceylon.app.ui.bills.SavedBiller
 import com.payceylon.app.ui.nearby.NearbyPlace
 import com.payceylon.app.ui.nearby.NearbyPlaces
 import com.payceylon.app.ui.nearby.PlaceKind
@@ -190,6 +194,39 @@ class HttpBackend(baseUrl: String) : Backend {
         post<TransactionDto>("v1/withdrawals", jsonBody(FundsBody(amount.toPlainString(), bankId)), idempotencyKey = idempotencyKey)
             .toTransaction()
 
+    // --- Bills ------------------------------------------------------------------------------
+
+    override suspend fun billers(): List<Biller> =
+        get<BillersResponse>("v1/billers").items.mapNotNull { dto ->
+            val category = when (dto.category) {
+                "ELECTRICITY" -> BillCategory.Electricity
+                "WATER" -> BillCategory.Water
+                "MOBILE" -> BillCategory.Mobile
+                "INTERNET_TV" -> BillCategory.InternetTv
+                else -> return@mapNotNull null
+            }
+            Biller(dto.id, dto.name, dto.shortName, category, dto.kind == "RELOAD", dto.accountLabel, dto.accountHint)
+        }
+
+    override suspend fun lookupBill(billerId: String, account: String): Bill =
+        get<BillDto>("v1/billers/$billerId/bill", "account" to account)
+            .let { Bill(it.account, it.accountName, BigDecimal(it.amountDue), it.dueDate) }
+
+    override suspend fun payBill(billerId: String, account: String, amount: BigDecimal, idempotencyKey: String): WalletTransaction =
+        post<TransactionDto>(
+            "v1/bills/payments",
+            jsonBody(BillPayBody(billerId, account, amount.toPlainString())),
+            idempotencyKey = idempotencyKey,
+        ).toTransaction()
+
+    override suspend fun savedBillers(): List<SavedBiller> =
+        get<SavedBillersResponse>("v1/bills/saved").items
+            .map { SavedBiller(it.billerId, it.account, BigDecimal(it.lastAmount), it.lastPaidAt) }
+
+    override suspend fun removeSavedBiller(billerId: String, account: String) {
+        send<Unit>("DELETE", "v1/bills/saved/$billerId/$account")
+    }
+
     // --- Payment methods ------------------------------------------------------------------
 
     override suspend fun paymentMethods(): List<PaymentMethod> =
@@ -343,6 +380,7 @@ internal fun TransactionDto.toTransaction() = WalletTransaction(
         "SWAP" -> TransactionDirection.Swap
         "TOP_UP" -> TransactionDirection.TopUp
         "WITHDRAWAL" -> TransactionDirection.Withdrawal
+        "BILL" -> TransactionDirection.Bill
         else -> TransactionDirection.Outgoing
     },
     currency = currency,

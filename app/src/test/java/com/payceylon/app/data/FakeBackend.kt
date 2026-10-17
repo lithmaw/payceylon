@@ -8,6 +8,10 @@ import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.PaymentMethodType
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.UserProfile
+import com.payceylon.app.ui.bills.Bill
+import com.payceylon.app.ui.bills.BillCategory
+import com.payceylon.app.ui.bills.Biller
+import com.payceylon.app.ui.bills.SavedBiller
 import com.payceylon.app.ui.nearby.NearbyPlace
 import com.payceylon.app.ui.nearby.NearbyPlaces
 import com.payceylon.app.ui.nearby.PlaceKind
@@ -160,6 +164,36 @@ class FakeBackend(
         val bank = methods.first { it.id == bankId && it.type == PaymentMethodType.Bank }
         debit(Asset.LKR, amount + WalletFees.withdrawalFee)
         return record(idempotencyKey, transaction(TransactionDirection.Withdrawal, Asset.LKR, amount, bank.name, bank.masked, WalletFees.withdrawalFee))
+    }
+
+    val billerList = listOf(
+        Biller("ceb", "Ceylon Electricity Board", "CEB", BillCategory.Electricity, false, "Account number", "10 digits"),
+        Biller("dialog", "Dialog", "Dialog", BillCategory.Mobile, true, "Mobile number", "07X XXX XXXX"),
+    )
+    val saved = mutableListOf<SavedBiller>()
+
+    override suspend fun billers(): List<Biller> = also { call() }.billerList
+
+    override suspend fun lookupBill(billerId: String, account: String): Bill {
+        call()
+        return Bill(account, profile.name, BigDecimal("450.00"), System.currentTimeMillis())
+    }
+
+    override suspend fun payBill(billerId: String, account: String, amount: BigDecimal, idempotencyKey: String): WalletTransaction {
+        call()
+        responses[idempotencyKey]?.let { return it }
+        val biller = billerList.first { it.id == billerId }
+        debit(Asset.LKR, amount)
+        saved.removeAll { it.billerId == billerId && it.account == account }
+        saved.add(0, SavedBiller(billerId, account, amount, System.currentTimeMillis()))
+        return record(idempotencyKey, transaction(TransactionDirection.Bill, Asset.LKR, amount, biller.shortName, account, null))
+    }
+
+    override suspend fun savedBillers(): List<SavedBiller> = also { call() }.saved.toList()
+
+    override suspend fun removeSavedBiller(billerId: String, account: String) {
+        call()
+        saved.removeAll { it.billerId == billerId && it.account == account }
     }
 
     override suspend fun paymentMethods(): List<PaymentMethod> = also { call() }.methods.toList()

@@ -291,4 +291,20 @@ class WalletViewModelTest {
         // 1,250 now vs 1,000 before the payment arrived.
         assertEquals(0, BigDecimal("25.0").compareTo(wallet.monthlyChangePercent(Asset.LKR)))
     }
+
+    @Test
+    fun payingABillDebitsLkrAndRecordsABillTransaction() = runTest {
+        val wallet = signedIn()
+        val ceb = wallet.billers().first { it.id == "ceb" }
+        val bill = wallet.lookupBill(ceb, "1234567890")
+
+        val tx = wallet.payBill(ceb, bill.account, bill.amountDue, "bill-key")
+
+        assertEquals(TransactionDirection.Bill, tx.direction)
+        assertEquals("Payment to CEB", tx.title)
+        assertEquals(BigDecimal("1000.00") - bill.amountDue, wallet.balanceOf(Asset.LKR))
+        assertEquals(tx.id, wallet.transactions.first().id)
+        assertEquals(-bill.amountDue.toDouble(), tx.netChange(Asset.LKR).toDouble(), 0.0)
+        assertEquals(listOf("1234567890"), wallet.savedBillers().map { it.account })
+    }
 }

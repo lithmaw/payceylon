@@ -74,6 +74,7 @@ import com.payceylon.app.ui.components.canLockApp
 import com.payceylon.app.ui.components.findActivity
 import com.payceylon.app.ui.components.promptForUnlock
 import com.payceylon.app.ui.components.showError
+import com.payceylon.app.ui.bills.BillsScreen
 import com.payceylon.app.ui.nearby.NearbyScreen
 import com.payceylon.app.ui.theme.CryptoWalletColors
 import com.payceylon.app.ui.theme.FiatWalletColors
@@ -120,7 +121,7 @@ private fun OfflineNotice() {
 private enum class AppDestination {
     Auth, ProfileSetup, Home, Transactions, Receive, Swap, TopUp, Withdraw,
     Settings, Profile, EditProfileField, PaymentMethods, AddCard, AddBank, Legal,
-    TransactionDetail, QrScan, SendToUsername, SendMoney, Nearby,
+    TransactionDetail, QrScan, SendToUsername, SendMoney, Nearby, Bills,
 }
 
 private val AccountDestinations = setOf(
@@ -375,6 +376,7 @@ fun PayCeylonApp(
                         onTopUp = { destination = AppDestination.TopUp },
                         onWithdraw = { destination = AppDestination.Withdraw },
                         onNearby = { destination = AppDestination.Nearby },
+                        onBills = { destination = AppDestination.Bills },
                         onTransactionClick = { transaction ->
                             selectedTransactionId = transaction.id
                             detailOrigin = AppDestination.Home
@@ -399,9 +401,6 @@ fun PayCeylonApp(
                         onProfileClick = { destination = AppDestination.Settings },
                         hideBalanceByDefault = account.isEnabled(AccountSetting.HideBalance),
                         monthlyChangeOf = walletViewModel::monthlyChangePercent,
-                        cards = account.cards,
-                        primaryCard = account.primaryCard,
-                        onPrimaryCardChange = { account.selectPrimaryCard(it.id) },
                     )
 
                     AppDestination.Transactions -> TransactionsScreen(
@@ -549,6 +548,20 @@ fun PayCeylonApp(
                     AppDestination.Nearby -> NearbyScreen(
                         loadPlaces = walletViewModel::nearbyPlaces,
                         onBack = ::goBack,
+                    )
+
+                    AppDestination.Bills -> BillsScreen(
+                        balance = walletViewModel.balanceOf(Asset.LKR),
+                        loadBillers = walletViewModel::billers,
+                        loadSaved = walletViewModel::savedBillers,
+                        lookupBill = walletViewModel::lookupBill,
+                        removeSaved = { walletViewModel.removeSavedBiller(it) },
+                        onPay = { biller, billAccount, amount, key ->
+                            confirmPayment("Pay LKR ${amount.toAmountString(Asset.LKR)} to ${biller.shortName}")
+                            walletViewModel.payBill(biller, billAccount, amount, key)
+                        },
+                        onBack = ::goBack,
+                        onDone = { destination = AppDestination.Home },
                     )
 
                     AppDestination.SendMoney -> key(sendMoneySession) {
