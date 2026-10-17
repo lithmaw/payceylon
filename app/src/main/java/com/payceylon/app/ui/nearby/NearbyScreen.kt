@@ -17,10 +17,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -44,8 +42,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -154,6 +154,7 @@ fun NearbyScreen(
     var movedAway by remember { mutableStateOf(false) }
     var filter by rememberSaveable { mutableStateOf(PlaceFilter.All) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var askOpenId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val visible = places.filter(filter::matches)
 
@@ -250,6 +251,7 @@ fun NearbyScreen(
                     infoWindow = null
                     setOnMarkerClickListener { _, _ ->
                         selectedId = place.id
+                        askOpenId = place.id
                         true
                     }
                 },
@@ -502,14 +504,86 @@ fun NearbyScreen(
                         PlaceRow(
                             place = place,
                             selected = place.id == selectedId,
-                            onClick = { selectedId = if (selectedId == place.id) null else place.id },
-                            onDirections = { openDirections(context, place) },
+                            onClick = {
+                                selectedId = place.id
+                                askOpenId = place.id
+                            },
                         )
                     }
                 }
             }
         }
     }
+
+    places.firstOrNull { it.id == askOpenId }?.let { place ->
+        OpenInMapsDialog(
+            place = place,
+            onOpen = {
+                askOpenId = null
+                openDirections(context, place)
+            },
+            onDismiss = { askOpenId = null },
+        )
+    }
+}
+
+/** Asks before leaving the app for walking directions in Google Maps. */
+@Composable
+private fun OpenInMapsDialog(place: NearbyPlace, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    val colors = LocalWalletColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.card,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(place.kind.color.copy(alpha = 0.1f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(place.kind.icon),
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    colorFilter = ColorFilter.tint(place.kind.color),
+                )
+            }
+        },
+        title = {
+            Text(place.name, color = colors.content, fontFamily = InterFontFamily, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                val details = buildList {
+                    add(listOf(place.kindLabel, formatDistance(place.distanceMeters) + " away").joinToString(" · "))
+                    if (place.address.isNotBlank()) add(place.address)
+                    if (place.kind == PlaceKind.Agent) add("Cash in and cash out for your PayCeylon wallet")
+                    place.openingHours?.let { add("Hours: $it") }
+                }
+                details.forEach {
+                    Text(it, color = colors.contentSecondary, fontFamily = InterFontFamily, fontSize = 14.sp)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Open walking directions in Google Maps?",
+                    color = colors.content,
+                    fontFamily = InterFontFamily,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onOpen) {
+                Text("Open Google Maps", color = PayCeylonPrimary, fontFamily = InterFontFamily, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = colors.content, fontFamily = InterFontFamily, fontWeight = FontWeight.Medium)
+            }
+        },
+    )
 }
 
 @Composable
@@ -517,7 +591,6 @@ private fun PlaceRow(
     place: NearbyPlace,
     selected: Boolean,
     onClick: () -> Unit,
-    onDirections: () -> Unit,
 ) {
     val colors = LocalWalletColors.current
     Column(
@@ -525,7 +598,7 @@ private fun PlaceRow(
             .fillMaxWidth()
             .tap(onClick = onClick)
             .clip(RoundedCornerShape(20.dp))
-            .background(colors.card)
+            .background(if (selected) PayCeylonPrimary.copy(alpha = 0.08f) else colors.card)
             .padding(horizontal = 12.dp, vertical = 11.dp),
     ) {
         Row(
@@ -572,41 +645,6 @@ private fun PlaceRow(
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-        }
-        AnimatedVisibility(
-            visible = selected,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
-        ) {
-            Column(
-                modifier = Modifier.padding(start = 52.dp, top = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                val details = buildList {
-                    if (place.kind == PlaceKind.Agent) add("Cash in and cash out for your PayCeylon wallet")
-                    place.openingHours?.let { add("Hours: $it") }
-                }
-                details.forEach {
-                    Text(it, color = colors.contentSecondary, fontFamily = InterFontFamily, fontSize = 13.sp)
-                }
-                Row(
-                    modifier = Modifier
-                        .tap(onClick = onDirections)
-                        .clip(RoundedCornerShape(50))
-                        .background(PayCeylonPrimary)
-                        .padding(horizontal = 16.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_location),
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp),
-                        colorFilter = ColorFilter.tint(Color.White),
-                    )
-                    Text("Directions", color = Color.White, fontFamily = InterFontFamily, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
         }
     }
 }
@@ -721,10 +759,15 @@ private fun openDirections(context: Context, place: NearbyPlace) {
     val uri = Uri.parse(
         "https://www.google.com/maps/dir/?api=1&destination=${place.latitude},${place.longitude}&travelmode=walking",
     )
+    val maps = Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps")
     try {
-        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+        context.startActivity(maps)
     } catch (_: ActivityNotFoundException) {
-        showError(context, "No maps app or browser found.")
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (_: ActivityNotFoundException) {
+            showError(context, "No maps app or browser found.")
+        }
     }
 }
 
