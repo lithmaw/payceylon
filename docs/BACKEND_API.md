@@ -277,6 +277,32 @@ App: `AccountState.addCard`, `addBank`, `removePaymentMethod`.
 
 App: `AccountState.notifications`, `markRead`, `markAllRead`.
 
+## Nearby places
+
+| Method | Path | Body | Response |
+| --- | --- | --- | --- |
+| GET | `/places/nearby?lat=7.4867&lon=80.3647&radius=3000` | – | `{ "items": [Place], "banksAvailable": true }` |
+
+```json
+{
+  "id": "osm-node-123", "kind": "ATM", "name": "People's Bank ATM",
+  "address": "Colombo Road, Kurunegala", "latitude": 7.4871, "longitude": 80.3652,
+  "distanceMeters": 283, "hasAtm": true, "openingHours": "Mo-Sa 08:00-20:00"
+}
+```
+
+- `kind` is `ATM`, `BANK` or `AGENT`; `radius` is 500 to 10000 metres (default 3000). Items are
+  nearest first; `address` and `openingHours` may be empty or null.
+- ATMs and banks are real OpenStreetMap data from the Overpass API: every public Overpass server is
+  asked at once (5 s limit) and answers are cached per area for an hour. When none answers, the
+  last answer for the area is used, then the saved snapshot `backend/data/osm_banking_kurunegala.json`
+  (12 km around Kurunegala); elsewhere `banksAvailable` is `false` and only agents are returned.
+- PayCeylon agents (cash in / cash out shops) are simulated, with made-up names around Kurunegala
+  town. Anywhere with none in range, three are placed a few hundred metres from the point asked.
+
+App: `NearbyScreen` (map from OpenStreetMap tiles via osmdroid, position from the fused location
+provider).
+
 ## Payment links and QR codes (no endpoint, shared format)
 
 The Receive QR, shared links and the scanner all use:

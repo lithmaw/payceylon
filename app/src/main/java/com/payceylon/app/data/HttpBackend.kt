@@ -9,6 +9,9 @@ import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.PaymentMethodType
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.UserProfile
+import com.payceylon.app.ui.nearby.NearbyPlace
+import com.payceylon.app.ui.nearby.NearbyPlaces
+import com.payceylon.app.ui.nearby.PlaceKind
 import com.payceylon.app.ui.wallet.Asset
 import com.payceylon.app.ui.wallet.CryptoToken
 import com.payceylon.app.ui.wallet.PayCeylonUser
@@ -142,6 +145,30 @@ class HttpBackend(baseUrl: String) : Backend {
     override suspend fun searchUsers(query: String, limit: Int): List<PayCeylonUser> =
         get<UsersResponse>("v1/users/search", "q" to query, "limit" to limit.toString()).items
             .map { PayCeylonUser(it.name, it.handle) }
+
+    override suspend fun nearbyPlaces(latitude: Double, longitude: Double, radiusMeters: Int): NearbyPlaces {
+        val response = get<PlacesResponse>(
+            "v1/places/nearby",
+            "lat" to latitude.toString(),
+            "lon" to longitude.toString(),
+            "radius" to radiusMeters.toString(),
+        )
+        val places = response.items.mapNotNull { dto ->
+            val kind = PlaceKind.entries.firstOrNull { it.name.equals(dto.kind, ignoreCase = true) } ?: return@mapNotNull null
+            NearbyPlace(
+                id = dto.id,
+                kind = kind,
+                name = dto.name,
+                address = dto.address,
+                latitude = dto.latitude,
+                longitude = dto.longitude,
+                distanceMeters = dto.distanceMeters,
+                hasAtm = dto.hasAtm,
+                openingHours = dto.openingHours,
+            )
+        }
+        return NearbyPlaces(places, response.banksAvailable)
+    }
 
     override suspend fun send(toHandle: String, amount: BigDecimal, asset: Asset, idempotencyKey: String): WalletTransaction =
         post<TransactionDto>(

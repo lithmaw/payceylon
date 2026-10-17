@@ -20,8 +20,8 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
 | --- | --- |
 | Jetpack Compose (Kotlin) | All UI in `ui/` |
 | Local database | Room in `data/local/`: last server snapshot (profile, photo, balances, transactions, notifications, cards/banks, settings); the app opens from it instantly and works read-only offline |
-| Hardware features | Camera (CameraX + ML Kit QR scanning), biometric sensor (app unlock) |
-| Remote data source | PayCeylon REST API (`data/HttpBackend.kt`) and Firebase |
+| Hardware features | Camera (CameraX + ML Kit QR scanning), biometric sensor (app unlock), GPS (nearby ATMs and agents) |
+| Remote data source | PayCeylon REST API (`data/HttpBackend.kt`), Firebase, OpenStreetMap (map tiles; ATMs and banks via the API) |
 | Authentication | Phone + one-time code issued by the API, then Firebase sign-in (custom token) verified by the API on every request; biometric app lock |
 
 ## Features
@@ -38,6 +38,11 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
 - **Swap** between LKR and tokens at indicative rates (0.5% fee).
 - **Top Up / Withdraw** (fiat only): top up from a linked card (1.5% fee) or bank (free), withdraw
   to a bank (LKR 25 fee). Crypto is bought and sold by swapping with LKR.
+- **Nearby** (fiat wallet, in the action sheet): map of ATMs and bank branches (real
+  OpenStreetMap data) and PayCeylon cash agents (simulated, around Kurunegala) within 3 km of
+  the phone's GPS position, with All / Agents / ATMs / Banks filters, a list by distance,
+  "Search this area" after panning, and walking directions in Google Maps. Without location it
+  shows Kurunegala town.
 - **Transactions:** full list with filters, and details with fees, reference, on-chain hash
   (crypto) and a shareable receipt.
 - **Notifications** dropdown on the bell: transactions plus account and security changes.
@@ -96,6 +101,7 @@ app/src/main/java/com/payceylon/app/
     ├── auth/                    Onboarding, OTP, profile setup, connection-problem screen
     ├── wallet/                  Home, Send, Receive, Swap, Top Up, Withdraw, transactions
     │   └── WalletViewModel.kt   Session, wallet state, actions; API first, Room as the local copy
+    ├── nearby/                  Map of ATMs, banks and agents (osmdroid + GPS)
     ├── account/                 Settings, profile, cards & banks, notifications, legal
     │   └── AccountState.kt      Profile, linked accounts, settings, notifications
     ├── components/              Shared UI, submit helper, biometric app lock
@@ -149,3 +155,5 @@ images/                          Source design assets from Figma
 - Card network logos: [svg-credit-card-payment-icons](https://github.com/aaronfagan/svg-credit-card-payment-icons)
   (Apache 2.0), converted to vector drawables.
 - Glass blur: [Haze](https://github.com/chrisbanes/haze) (Apache 2.0).
+- Map: [osmdroid](https://github.com/osmdroid/osmdroid) (Apache 2.0); map tiles and ATM/bank data
+  © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).

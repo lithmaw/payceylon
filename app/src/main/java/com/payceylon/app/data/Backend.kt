@@ -9,6 +9,7 @@ import com.payceylon.app.ui.account.AppNotification
 import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.UserProfile
+import com.payceylon.app.ui.nearby.NearbyPlaces
 import com.payceylon.app.ui.wallet.Asset
 import com.payceylon.app.ui.wallet.CryptoToken
 import com.payceylon.app.ui.wallet.PayCeylonUser
@@ -65,6 +66,9 @@ interface Backend {
     suspend fun addresses(): Map<CryptoToken, String>
     suspend fun transactions(limit: Int = 100): List<WalletTransaction>
     suspend fun searchUsers(query: String, limit: Int): List<PayCeylonUser>
+
+    /** ATMs and banks (OpenStreetMap) and PayCeylon agents around a point, nearest first. */
+    suspend fun nearbyPlaces(latitude: Double, longitude: Double, radiusMeters: Int = 3000): NearbyPlaces
 
     suspend fun send(toHandle: String, amount: BigDecimal, asset: Asset, idempotencyKey: String): WalletTransaction
 

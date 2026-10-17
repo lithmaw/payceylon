@@ -421,6 +421,53 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 204, response.text)
         self.assertEqual(len(self.revoked), 1)
 
+    async def test_nearby_places_merge_agents_and_osm_sorted_by_distance(self):
+        token, _ = await self.sign_up()
+        elements = [
+            {"type": "node", "id": 1, "lat": 7.4870, "lon": 80.3650, "tags": {"amenity": "atm", "brand": "NDB"}},
+            {"type": "way", "id": 2, "center": {"lat": 7.4900, "lon": 80.3600},
+             "tags": {"amenity": "bank", "name": "Sampath Bank", "atm": "yes"}},
+            {"type": "node", "id": 3, "lat": 7.6000, "lon": 80.5000, "tags": {"amenity": "bank"}},  # too far
+        ]
+        with mock.patch.object(main, "osm_banking", mock.AsyncMock(return_value=elements)):
+            response = await self.client.get("/v1/places/nearby", headers=self.auth(token),
+                                             params={"lat": 7.4863, "lon": 80.3647})
+        body = response.json()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(body["banksAvailable"])
+        kinds = {place["kind"] for place in body["items"]}
+        self.assertEqual(kinds, {"ATM", "BANK", "AGENT"})
+        self.assertNotIn("osm-node-3", [place["id"] for place in body["items"]])
+        distances = [place["distanceMeters"] for place in body["items"]]
+        self.assertEqual(distances, sorted(distances))
+        atm = next(place for place in body["items"] if place["id"] == "osm-node-1")
+        self.assertEqual((atm["name"], atm["hasAtm"]), ("NDB", True))
+
+    async def test_nearby_places_fall_back_when_osm_is_down_and_far_from_agents(self):
+        token, _ = await self.sign_up()
+        with mock.patch.object(main, "osm_banking", mock.AsyncMock(side_effect=RuntimeError("down"))):
+            response = await self.client.get("/v1/places/nearby", headers=self.auth(token),
+                                             params={"lat": 6.9271, "lon": 79.8612})  # Colombo
+        body = response.json()
+        self.assertFalse(body["banksAvailable"])
+        self.assertEqual(len(body["items"]), 3)
+        self.assertTrue(all(place["kind"] == "AGENT" and place["distanceMeters"] < 1000 for place in body["items"]))
+
+    async def test_osm_banking_uses_kurunegala_snapshot_when_overpass_is_down(self):
+        main._places_cache.clear()
+        with mock.patch.object(main, "overpass", mock.AsyncMock(side_effect=RuntimeError("down"))):
+            elements = await main.osm_banking(7.4863, 80.3647, 3000)
+            self.assertTrue(elements)
+            self.assertTrue(all(element["tags"]["amenity"] in ("atm", "bank") for element in elements))
+            with self.assertRaises(RuntimeError):
+                await main.osm_banking(6.9271, 79.8612, 3000)  # Colombo: outside the snapshot
+
+    async def test_nearby_places_require_auth_and_valid_coordinates(self):
+        token, _ = await self.sign_up()
+        self.assertEqual((await self.client.get("/v1/places/nearby", params={"lat": 7, "lon": 80})).status_code, 401)
+        bad = await self.client.get("/v1/places/nearby", headers=self.auth(token), params={"lat": 120, "lon": 80})
+        self.assertEqual(bad.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

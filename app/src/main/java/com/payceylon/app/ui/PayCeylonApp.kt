@@ -74,6 +74,7 @@ import com.payceylon.app.ui.components.canLockApp
 import com.payceylon.app.ui.components.findActivity
 import com.payceylon.app.ui.components.promptForUnlock
 import com.payceylon.app.ui.components.showError
+import com.payceylon.app.ui.nearby.NearbyScreen
 import com.payceylon.app.ui.theme.CryptoWalletColors
 import com.payceylon.app.ui.theme.FiatWalletColors
 import com.payceylon.app.ui.theme.LocalWalletColors
@@ -119,7 +120,7 @@ private fun OfflineNotice() {
 private enum class AppDestination {
     Auth, ProfileSetup, Home, Transactions, Receive, Swap, TopUp, Withdraw,
     Settings, Profile, EditProfileField, PaymentMethods, AddCard, AddBank, Legal,
-    TransactionDetail, QrScan, SendToUsername, SendMoney,
+    TransactionDetail, QrScan, SendToUsername, SendMoney, Nearby,
 }
 
 private val AccountDestinations = setOf(
@@ -373,6 +374,7 @@ fun PayCeylonApp(
                         onSwap = { destination = AppDestination.Swap },
                         onTopUp = { destination = AppDestination.TopUp },
                         onWithdraw = { destination = AppDestination.Withdraw },
+                        onNearby = { destination = AppDestination.Nearby },
                         onTransactionClick = { transaction ->
                             selectedTransactionId = transaction.id
                             detailOrigin = AppDestination.Home
@@ -542,6 +544,11 @@ fun PayCeylonApp(
                         onRecipientSelected = { handle ->
                             openSendMoney(PaymentRequest(handle), origin = AppDestination.SendToUsername)
                         },
+                    )
+
+                    AppDestination.Nearby -> NearbyScreen(
+                        loadPlaces = walletViewModel::nearbyPlaces,
+                        onBack = ::goBack,
                     )
 
                     AppDestination.SendMoney -> key(sendMoneySession) {

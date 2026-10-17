@@ -16,6 +16,7 @@ import com.payceylon.app.data.local.WalletCache
 import com.payceylon.app.data.local.WalletSnapshot
 import com.payceylon.app.ui.account.AccountSetting
 import com.payceylon.app.ui.account.AccountState
+import com.payceylon.app.ui.nearby.NearbyPlaces
 import com.payceylon.app.ui.account.PaymentMethod
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -430,6 +431,9 @@ class WalletViewModel(
             .filterNot { it.handle.equals(account.profile.handle, ignoreCase = true) }
             .take(limit)
     }
+
+    suspend fun nearbyPlaces(latitude: Double, longitude: Double, radiusMeters: Int): NearbyPlaces =
+        backend.nearbyPlaces(latitude, longitude, radiusMeters)
 
     fun balanceOf(asset: Asset): BigDecimal = balances.value[asset] ?: BigDecimal.ZERO
 

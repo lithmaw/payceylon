@@ -136,6 +136,8 @@ fun HomeScreen(
     onSwap: () -> Unit,
     onTopUp: () -> Unit,
     onWithdraw: () -> Unit,
+    /** Map of ATMs, banks and PayCeylon agents. */
+    onNearby: () -> Unit,
     onTransactionClick: (WalletTransaction) -> Unit,
     onSeeAllTransactions: () -> Unit,
     /** Profile photo for the header avatar; null shows the default. */
@@ -319,6 +321,7 @@ fun HomeScreen(
             onSwap = onSwap,
             onTopUp = onTopUp,
             onWithdraw = onWithdraw,
+            onNearby = onNearby,
             isCrypto = isCrypto,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
@@ -980,7 +983,8 @@ private data class ExtraAction(
 
 /**
  * Top Up and Withdraw move LKR to and from cards and banks, so they are fiat-only; crypto is
- * bought and sold by swapping with LKR.
+ * bought and sold by swapping with LKR. Nearby (ATMs, banks, cash agents) is about cash, so
+ * it is fiat-only too.
  */
 private fun extraActions(isCrypto: Boolean) = if (isCrypto) {
     listOf(ExtraAction("Swap", R.drawable.ic_exchange))
@@ -989,6 +993,7 @@ private fun extraActions(isCrypto: Boolean) = if (isCrypto) {
         ExtraAction("Top Up", R.drawable.ic_top_up),
         ExtraAction("Swap", R.drawable.ic_exchange),
         ExtraAction("Withdraw", R.drawable.ic_withdraw),
+        ExtraAction("Nearby", R.drawable.ic_location),
     )
 }
 
@@ -1001,6 +1006,7 @@ private fun ActionBar(
     onSwap: () -> Unit,
     onTopUp: () -> Unit,
     onWithdraw: () -> Unit,
+    onNearby: () -> Unit,
     isCrypto: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -1155,6 +1161,7 @@ private fun ActionBar(
                                         "Swap" -> onSwap()
                                         "Top Up" -> onTopUp()
                                         "Withdraw" -> onWithdraw()
+                                        "Nearby" -> onNearby()
                                         else -> Unit
                                     }
                                 },

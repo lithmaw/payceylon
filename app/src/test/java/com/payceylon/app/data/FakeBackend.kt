@@ -8,6 +8,9 @@ import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.account.PaymentMethodType
 import com.payceylon.app.ui.account.ProfileField
 import com.payceylon.app.ui.account.UserProfile
+import com.payceylon.app.ui.nearby.NearbyPlace
+import com.payceylon.app.ui.nearby.NearbyPlaces
+import com.payceylon.app.ui.nearby.PlaceKind
 import com.payceylon.app.ui.wallet.Asset
 import com.payceylon.app.ui.wallet.CryptoToken
 import com.payceylon.app.ui.wallet.PayCeylonUser
@@ -110,6 +113,14 @@ class FakeBackend(
         call()
         val q = query.removePrefix("@").lowercase()
         return directory.filter { q in it.handle || q in it.name.lowercase() }.take(limit)
+    }
+
+    override suspend fun nearbyPlaces(latitude: Double, longitude: Double, radiusMeters: Int): NearbyPlaces {
+        call()
+        return NearbyPlaces(
+            listOf(NearbyPlace("agent-1", PlaceKind.Agent, "Siri Grocery", "Kandy Road, Kurunegala", latitude, longitude, 120)),
+            banksAvailable = true,
+        )
     }
 
     override suspend fun send(toHandle: String, amount: BigDecimal, asset: Asset, idempotencyKey: String): WalletTransaction {

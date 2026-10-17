@@ -140,6 +140,22 @@ internal data class NotificationsPage(
 internal data class NotificationReadBody(val ids: List<String> = emptyList(), val all: Boolean = false)
 
 @Serializable
+internal data class PlaceDto(
+    val id: String,
+    val kind: String,
+    val name: String,
+    val address: String = "",
+    val latitude: Double,
+    val longitude: Double,
+    val distanceMeters: Int,
+    val hasAtm: Boolean = false,
+    val openingHours: String? = null,
+)
+
+@Serializable
+internal data class PlacesResponse(val items: List<PlaceDto>, val banksAvailable: Boolean = true)
+
+@Serializable
 internal data class ErrorDto(val code: String, val message: String, val field: String? = null)
 
 @Serializable

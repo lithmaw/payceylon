@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -14,6 +15,7 @@ from uuid import UUID
 
 import asyncpg
 import firebase_admin
+import httpx
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
@@ -814,6 +816,166 @@ def demo_address(user_id: UUID, asset: str) -> str:
 @app.get("/v1/wallet/addresses")
 async def addresses(user: User) -> dict[str, str]:
     return {asset: demo_address(user["id"], asset) for asset in ("USDT", "BTC", "ETH", "SOL")}
+
+
+# PayCeylon cash agents (shops that take and pay out cash for the wallet). Simulated, around
+# Kurunegala town; the names are made up.
+AGENTS = [
+    ("Lakmini Communication", "Colombo Road, Kurunegala", 7.4818, 80.3620),
+    ("Wayamba Mobile Centre", "Puttalam Road, Kurunegala", 7.4891, 80.3586),
+    ("Siri Grocery", "Kandy Road, Kurunegala", 7.4842, 80.3712),
+    ("Nuwan Pharmacy", "Negombo Road, Kurunegala", 7.4780, 80.3570),
+    ("City Cell Point", "Dambulla Road, Kurunegala", 7.4945, 80.3668),
+    ("Malkanthi Stores", "Wehera, Kurunegala", 7.4710, 80.3735),
+    ("Ruwan Book Shop", "Mallawapitiya, Kurunegala", 7.4980, 80.3780),
+    ("Sathi Super", "Wilgoda, Kurunegala", 7.4920, 80.3500),
+]
+# Used when the user is nowhere near the seeded agents, so the map always has some.
+NEARBY_AGENT_NAMES = ("Sunil Stores", "Nimal Communication", "Janatha Pharmacy")
+AGENT_HOURS = "Mo-Sa 08:00-20:00"
+# Public Overpass servers are often slow or down, so all are asked at once and the first answer wins.
+OVERPASS_URLS = (
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+)
+OVERPASS_TIMEOUT_SECONDS = 5
+PLACES_CACHE_SECONDS = 3600
+# (lat, lon, radius) rounded -> (fetched at, OpenStreetMap elements)
+_places_cache: dict[tuple[float, float, int], tuple[float, list[dict[str, Any]]]] = {}
+# Saved OpenStreetMap ATMs and banks within OSM_SNAPSHOT_RADIUS of Kurunegala, used when Overpass is down.
+OSM_SNAPSHOT_PATH = Path(__file__).parent / "data" / "osm_banking_kurunegala.json"
+OSM_SNAPSHOT_CENTRE = (7.4863, 80.3647)
+OSM_SNAPSHOT_RADIUS = 12000
+
+
+def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
+    """Great-circle distance in metres (haversine)."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return round(2 * 6_371_000 * math.asin(math.sqrt(a)))
+
+
+async def overpass(query: str) -> list[dict[str, Any]]:
+    """Asks every Overpass server at once; returns the first successful answer."""
+
+    async def ask(client: httpx.AsyncClient, url: str) -> list[dict[str, Any]]:
+        response = await client.post(url, data={"data": query})
+        response.raise_for_status()
+        return response.json()["elements"]
+
+    headers = {"User-Agent": "PayCeylon/1.0 (university demo)"}
+    async with httpx.AsyncClient(timeout=OVERPASS_TIMEOUT_SECONDS, headers=headers) as client:
+        pending = {asyncio.create_task(ask(client, url)) for url in OVERPASS_URLS}
+        try:
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    if task.exception() is None:
+                        return task.result()
+        finally:
+            for task in pending:
+                task.cancel()
+    raise RuntimeError("OpenStreetMap is unavailable")
+
+
+async def osm_banking(lat: float, lon: float, radius: int) -> list[dict[str, Any]]:
+    """ATMs and bank branches from OpenStreetMap (Overpass API), cached per area for an hour.
+
+    When Overpass is down: the last answer for the area, else the saved Kurunegala snapshot.
+    """
+    key = (round(lat, 2), round(lon, 2), radius)
+    cached = _places_cache.get(key)
+    now = asyncio.get_running_loop().time()
+    if cached and now - cached[0] < PLACES_CACHE_SECONDS:
+        return cached[1]
+    # The rounded centre can be ~800 m off, so search wider; callers filter by exact distance.
+    query = (
+        f'[out:json][timeout:15];nwr["amenity"~"^(atm|bank)$"](around:{radius + 800},{key[0]},{key[1]});'
+        "out center tags 150;"
+    )
+    try:
+        elements = await overpass(query)
+    except RuntimeError:
+        logging.getLogger("payceylon").warning("Overpass unavailable for %s", key)
+        if cached:
+            return cached[1]
+        if distance_m(lat, lon, *OSM_SNAPSHOT_CENTRE) + radius <= OSM_SNAPSHOT_RADIUS and OSM_SNAPSHOT_PATH.exists():
+            return json.loads(OSM_SNAPSHOT_PATH.read_text(encoding="utf-8"))["elements"]
+        raise
+    _places_cache[key] = (now, elements)
+    return elements
+
+
+def osm_place(element: dict[str, Any], lat: float, lon: float) -> dict[str, Any] | None:
+    tags = element.get("tags", {})
+    point = element.get("center", element)
+    if "lat" not in point or "lon" not in point:
+        return None
+    is_atm = tags.get("amenity") == "atm"
+    name = tags.get("name") or tags.get("brand") or tags.get("operator") or ("ATM" if is_atm else "Bank branch")
+    address = ", ".join(filter(None, (tags.get("addr:street"), tags.get("addr:city"))))
+    return {
+        "id": f"osm-{element['type']}-{element['id']}",
+        "kind": "ATM" if is_atm else "BANK",
+        "name": name,
+        "address": address,
+        "latitude": point["lat"],
+        "longitude": point["lon"],
+        "distanceMeters": distance_m(lat, lon, point["lat"], point["lon"]),
+        "hasAtm": is_atm or tags.get("atm") == "yes",
+        "openingHours": tags.get("opening_hours"),
+    }
+
+
+def agent_places(lat: float, lon: float, radius: int) -> list[dict[str, Any]]:
+    agents = [
+        (f"agent-{index}", name, address, a_lat, a_lon)
+        for index, (name, address, a_lat, a_lon) in enumerate(AGENTS, start=1)
+        if distance_m(lat, lon, a_lat, a_lon) <= radius
+    ]
+    if not agents:
+        # A few hundred metres from wherever the user is (stable for the same spot).
+        base_lat, base_lon = round(lat, 3), round(lon, 3)
+        offsets = ((0.0031, 0.0012), (-0.0024, 0.0035), (0.0008, -0.0047))
+        agents = [
+            (f"agent-near-{base_lat}-{base_lon}-{index}", name, "Near you", base_lat + d_lat, base_lon + d_lon)
+            for index, (name, (d_lat, d_lon)) in enumerate(zip(NEARBY_AGENT_NAMES, offsets), start=1)
+        ]
+    return [
+        {
+            "id": agent_id,
+            "kind": "AGENT",
+            "name": name,
+            "address": address,
+            "latitude": a_lat,
+            "longitude": a_lon,
+            "distanceMeters": distance_m(lat, lon, a_lat, a_lon),
+            "hasAtm": False,
+            "openingHours": AGENT_HOURS,
+        }
+        for agent_id, name, address, a_lat, a_lon in agents
+    ]
+
+
+@app.get("/v1/places/nearby")
+async def nearby_places(
+    _user: User,
+    lat: float = Query(ge=-90, le=90),
+    lon: float = Query(ge=-180, le=180),
+    radius: int = Query(default=3000, ge=500, le=10000),
+) -> dict[str, Any]:
+    places = agent_places(lat, lon, radius)
+    banking_available = True
+    try:
+        elements = await osm_banking(lat, lon, radius)
+        places += [p for p in (osm_place(e, lat, lon) for e in elements) if p and p["distanceMeters"] <= radius]
+    except RuntimeError:
+        banking_available = False
+    places.sort(key=lambda place: place["distanceMeters"])
+    return {"items": places, "banksAvailable": banking_available}
 
 
 @app.get("/v1/wallet/summary")
