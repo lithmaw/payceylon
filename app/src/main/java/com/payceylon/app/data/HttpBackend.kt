@@ -254,6 +254,14 @@ class HttpBackend(baseUrl: String) : Backend {
         send<Unit>("POST", "v1/notifications/read", jsonBody(NotificationReadBody(ids, all)))
     }
 
+    override suspend fun registerDevice(token: String) {
+        send<Unit>("POST", "v1/devices", jsonBody(DeviceBody(token, platform = "ANDROID")))
+    }
+
+    override suspend fun unregisterDevice(token: String) {
+        send<Unit>("DELETE", "v1/devices/$token")
+    }
+
     override suspend fun logout() {
         send<Unit>("DELETE", "v1/auth/logout")
     }

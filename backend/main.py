@@ -6,6 +6,7 @@ import math
 import os
 import re
 import secrets
+import warnings
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_UP
@@ -21,7 +22,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from firebase_admin import auth, credentials
+from firebase_admin import auth, credentials, messaging
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -552,10 +553,108 @@ async def lifespan(application: FastAPI):
                 logging.getLogger("payceylon").exception("Settling withdrawals failed")
             await asyncio.sleep(15)
 
+    async def push_forever() -> None:
+        while True:
+            try:
+                await send_pushes(pool)
+            except Exception:
+                logging.getLogger("payceylon").exception("Sending push notifications failed")
+            await asyncio.sleep(PUSH_INTERVAL_SECONDS)
+
     settler = asyncio.create_task(settle_forever())
+    # Tests call send_pushes directly with Firebase faked.
+    pusher = asyncio.create_task(push_forever()) if settings.app_env != "test" else None
     yield
     settler.cancel()
+    if pusher:
+        pusher.cancel()
     await pool.close()
+
+
+PUSH_INTERVAL_SECONDS = 2
+# Older notifications are not pushed (e.g. after the server was down for a while).
+PUSH_MAX_AGE_SECONDS = 600
+# FCM error codes meaning the token will never work again.
+DEAD_TOKEN_ERRORS = {"UNREGISTERED", "INVALID_ARGUMENT", "SENDER_ID_MISMATCH"}
+PUSH_BATCH = 100
+
+# The app sends FCM registration tokens, which FCM still accepts; the SDK now prefers
+# Firebase installation IDs (Message.fid) and warns on every message otherwise.
+warnings.filterwarnings("ignore", message="Message.token is deprecated", category=DeprecationWarning)
+
+
+async def send_pushes(pool: asyncpg.Pool) -> int:
+    """
+    Sends new notifications to the owner's phones through Firebase Cloud Messaging.
+
+    Notifications are picked up after their transaction commits, so a payment that rolls back
+    never buzzes a phone. Data-only messages: the app builds the notification itself.
+    """
+    total = 0
+    while True:
+        claimed, sent = await push_batch(pool)
+        total += sent
+        if claimed < PUSH_BATCH:
+            return total
+
+
+async def push_batch(pool: asyncpg.Pool) -> tuple[int, int]:
+    """Claims up to PUSH_BATCH unpushed notifications and sends them; returns (claimed, sent)."""
+    async with pool.acquire() as conn, conn.transaction():
+        rows = await conn.fetch(
+            """UPDATE notifications SET pushed=true
+            WHERE id IN (
+                SELECT id FROM notifications WHERE NOT pushed ORDER BY created_at LIMIT $1
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id, user_id, kind, title, body, transaction_id, created_at""",
+            PUSH_BATCH,
+        )
+        fresh = [row for row in rows if row["created_at"] > datetime.now(timezone.utc) - timedelta(seconds=PUSH_MAX_AGE_SECONDS)]
+        if not fresh:
+            return len(rows), 0
+        tokens = await conn.fetch(
+            "SELECT user_id, fcm_token FROM device_tokens WHERE user_id=ANY($1::uuid[])",
+            list({row["user_id"] for row in fresh}),
+        )
+    by_user: dict[UUID, list[str]] = {}
+    for token in tokens:
+        by_user.setdefault(token["user_id"], []).append(token["fcm_token"])
+    messages = [
+        messaging.Message(
+            token=token,
+            data={
+                "id": str(row["id"]),
+                "kind": row["kind"],
+                "title": row["title"],
+                "body": row["body"],
+                "transactionId": str(row["transaction_id"]) if row["transaction_id"] else "",
+            },
+            android=messaging.AndroidConfig(priority="high", ttl=timedelta(seconds=PUSH_MAX_AGE_SECONDS)),
+        )
+        for row in fresh
+        for token in by_user.get(row["user_id"], [])
+    ]
+    if not messages:
+        return len(rows), 0
+    sent = 0
+    dead: set[str] = set()
+    for start in range(0, len(messages), 500):
+        batch = messages[start:start + 500]
+        # firebase_admin is synchronous; keep it off the event loop.
+        result = await run_in_threadpool(messaging.send_each, batch)
+        for message, response in zip(batch, result.responses):
+            if response.success:
+                sent += 1
+            elif getattr(response.exception, "code", None) in DEAD_TOKEN_ERRORS or isinstance(
+                response.exception, messaging.UnregisteredError
+            ):
+                dead.add(message.token)
+            else:
+                logging.getLogger("payceylon").warning("Push failed: %s", response.exception)
+    if dead:
+        await pool.execute("DELETE FROM device_tokens WHERE fcm_token=ANY($1::text[])", list(dead))
+    return len(rows), sent
 
 
 def settle_minutes() -> str:
@@ -1529,11 +1628,19 @@ async def mark_notifications_read(body: NotificationReadBody, user: User) -> Non
 
 @app.post("/v1/devices", status_code=204)
 async def register_device(body: DeviceBody, user: User) -> None:
-    await app.state.pool.execute(
-        """INSERT INTO device_tokens(user_id,fcm_token,platform) VALUES($1,$2,$3)
-        ON CONFLICT(user_id,fcm_token) DO UPDATE SET platform=EXCLUDED.platform,created_at=now()""",
-        user["id"], body.fcm_token, body.platform,
-    )
+    async with app.state.pool.acquire() as conn, conn.transaction():
+        # A phone belongs to whoever signed in on it last.
+        await conn.execute("DELETE FROM device_tokens WHERE fcm_token=$1 AND user_id<>$2", body.fcm_token, user["id"])
+        await conn.execute(
+            """INSERT INTO device_tokens(user_id,fcm_token,platform) VALUES($1,$2,$3)
+            ON CONFLICT(user_id,fcm_token) DO UPDATE SET platform=EXCLUDED.platform,created_at=now()""",
+            user["id"], body.fcm_token, body.platform,
+        )
+
+
+@app.delete("/v1/devices/{fcm_token}", status_code=204)
+async def unregister_device(fcm_token: str, user: User) -> None:
+    await app.state.pool.execute("DELETE FROM device_tokens WHERE user_id=$1 AND fcm_token=$2", user["id"], fcm_token)
 
 
 @app.delete("/v1/auth/logout", status_code=204)

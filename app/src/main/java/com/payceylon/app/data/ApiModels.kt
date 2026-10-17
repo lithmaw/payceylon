@@ -140,6 +140,9 @@ internal data class NotificationsPage(
 internal data class NotificationReadBody(val ids: List<String> = emptyList(), val all: Boolean = false)
 
 @Serializable
+internal data class DeviceBody(val fcmToken: String, val platform: String)
+
+@Serializable
 internal data class PlaceDto(
     val id: String,
     val kind: String,

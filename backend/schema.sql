@@ -164,3 +164,9 @@ CREATE TABLE IF NOT EXISTS saved_billers (
     last_paid_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, biller_id, account)
 );
+
+-- Push notifications: rows that existed before this column are treated as already pushed.
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS pushed BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE notifications ALTER COLUMN pushed SET DEFAULT false;
+CREATE INDEX IF NOT EXISTS notifications_unpushed_idx ON notifications(created_at) WHERE NOT pushed;
+CREATE INDEX IF NOT EXISTS device_tokens_token_idx ON device_tokens(fcm_token);

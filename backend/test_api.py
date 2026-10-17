@@ -525,6 +525,78 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         bad = await self.client.get("/v1/places/nearby", headers=self.auth(token), params={"lat": 120, "lon": 80})
         self.assertEqual(bad.status_code, 400)
 
+    async def register(self, token, fcm_token):
+        response = await self.client.post("/v1/devices", headers=self.auth(token),
+                                          json={"fcmToken": fcm_token, "platform": "ANDROID"})
+        self.assertEqual(response.status_code, 204, response.text)
+
+    async def push(self, failures=None):
+        """Runs one push pass with FCM faked; returns the messages sent, by token."""
+        failures = failures or {}
+        sent = []
+
+        def fake_send_each(messages):
+            responses = []
+            for message in messages:
+                error = failures.get(message.token)
+                if error is None:
+                    sent.append(message)
+                responses.append(SimpleNamespace(success=error is None, exception=error))
+            return SimpleNamespace(responses=responses)
+
+        with mock.patch.object(main.messaging, "send_each", fake_send_each):
+            await main.send_pushes(main.app.state.pool)
+        return sent
+
+    async def test_payment_pushes_to_the_receivers_phone_once(self):
+        sender, _ = await self.sign_up()
+        receiver, receiver_handle = await self.sign_up("Nimal Silva")
+        await self.push()  # earlier tests' notifications
+        phone = f"fcm-{secrets.token_hex(8)}"
+        await self.register(receiver, phone)
+        body = {"to": f"@{receiver_handle}", "amount": "250.00", "currency": "LKR"}
+        response = await self.client.post("/v1/payments", headers=self.auth(sender, secrets.token_hex(4)), json=body)
+        self.assertEqual(response.status_code, 201, response.text)
+        sent = [message for message in await self.push() if message.token == phone]
+        self.assertEqual(len(sent), 1, [message.data for message in sent])
+        self.assertEqual(sent[0].data["kind"], "TRANSACTION")
+        self.assertIn("250.00", sent[0].data["body"])
+        received = (await self.client.get("/v1/transactions", headers=self.auth(receiver))).json()["items"][0]
+        self.assertEqual(sent[0].data["transactionId"], received["id"])
+        self.assertEqual(sent[0].android.priority, "high")
+        self.assertEqual([message for message in await self.push() if message.token == phone], [])
+
+    async def test_a_phone_pushes_only_for_the_last_account_signed_in_on_it(self):
+        first, _ = await self.sign_up()
+        second, _ = await self.sign_up()
+        phone = f"fcm-{secrets.token_hex(8)}"
+        await self.register(first, phone)
+        await self.register(second, phone)
+        await self.push()
+        await self.client.patch("/v1/me", headers=self.auth(first), json={"name": "First Renamed"})
+        await self.client.patch("/v1/me", headers=self.auth(second), json={"name": "Second Renamed"})
+        sent = [message for message in await self.push() if message.token == phone]
+        self.assertEqual(len(sent), 1)  # the second account's change only
+        users = {row["user_id"] for row in await main.app.state.pool.fetch(
+            "SELECT user_id FROM device_tokens WHERE fcm_token=$1", phone)}
+        self.assertEqual(len(users), 1)
+
+    async def test_dead_and_unregistered_tokens_stop_getting_pushes(self):
+        token, _ = await self.sign_up()
+        dead, kept = f"fcm-{secrets.token_hex(8)}", f"fcm-{secrets.token_hex(8)}"
+        await self.register(token, dead)
+        await self.register(token, kept)
+        await self.push()
+        await self.client.patch("/v1/me", headers=self.auth(token), json={"name": "Renamed Once"})
+        error = main.messaging.UnregisteredError("Requested entity was not found.")
+        await self.push({dead: error})
+        tokens = {row["fcm_token"] for row in await main.app.state.pool.fetch(
+            "SELECT fcm_token FROM device_tokens WHERE fcm_token=ANY($1::text[])", [dead, kept])}
+        self.assertEqual(tokens, {kept})
+        response = await self.client.delete(f"/v1/devices/{kept}", headers=self.auth(token))
+        self.assertEqual(response.status_code, 204)
+        await self.client.patch("/v1/me", headers=self.auth(token), json={"name": "Renamed Twice"})
+        self.assertEqual([message for message in await self.push() if message.token in (dead, kept)], [])
 
 if __name__ == "__main__":
     unittest.main()

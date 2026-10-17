@@ -78,6 +78,7 @@ dependencies {
     implementation(libs.haze)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
+    implementation(libs.firebase.messaging)
     implementation(libs.okhttp)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.room.runtime)

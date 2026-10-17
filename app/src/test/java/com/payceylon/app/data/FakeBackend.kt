@@ -232,6 +232,18 @@ class FakeBackend(
         feed.replaceAll { if (all || it.id in ids) it.copy(read = true) else it }
     }
 
+    val devices = mutableListOf<String>()
+
+    override suspend fun registerDevice(token: String) {
+        call()
+        if (token !in devices) devices += token
+    }
+
+    override suspend fun unregisterDevice(token: String) {
+        call()
+        devices -= token
+    }
+
     override suspend fun logout() {
         call()
         loggedOut = true

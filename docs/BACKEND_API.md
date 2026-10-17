@@ -302,8 +302,27 @@ App: `AccountState.addCard`, `addBank`, `removePaymentMethod`.
 | GET | `/notifications?cursor=…` | – | `{ "items": [Notification], "nextCursor": "…", "unreadCount": 2 }` |
 | POST | `/notifications/read` | `{ "ids": ["n_…"] }` or `{ "all": true }` | `204` |
 | POST | `/devices` | `{ "fcmToken": "…", "platform": "ANDROID" }` | `204` (push registration) |
+| DELETE | `/devices/{fcmToken}` | – | `204` (on logout) |
 
-App: `AccountState.notifications`, `markRead`, `markAllRead`.
+App: `AccountState.notifications`, `markRead`, `markAllRead`; push in `push/` and
+`WalletViewModel` (registers after sign-in, removes on logout).
+
+### Push notifications
+
+Every notification is also pushed to the user's registered phones through Firebase Cloud
+Messaging, about 2 seconds after its transaction commits (a background task picks up rows with
+`pushed = false`; ones older than 10 minutes are skipped). A token belongs to the last account
+that registered it. Tokens FCM reports as unregistered are deleted.
+
+Messages are data-only, high priority, so the app builds the notification itself:
+
+```json
+{ "id": "…", "kind": "TRANSACTION", "title": "Payment received",
+  "body": "Kasun Perera sent you LKR 500.00.", "transactionId": "…" }
+```
+
+`transactionId` is `""` for account and security notices. Tapping a push opens that
+transaction.
 
 ## Nearby places
 

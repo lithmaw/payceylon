@@ -12,6 +12,7 @@ import com.payceylon.app.R
 import com.payceylon.app.data.ApiException
 import com.payceylon.app.data.AppServices
 import com.payceylon.app.data.Backend
+import com.payceylon.app.data.PushTokens
 import com.payceylon.app.data.local.WalletCache
 import com.payceylon.app.data.local.WalletSnapshot
 import com.payceylon.app.ui.account.AccountSetting
@@ -253,6 +254,7 @@ internal const val PlaceholderProfileName = "PayCeylon User"
 class WalletViewModel(
     private val backend: Backend = AppServices.backend,
     private val cache: WalletCache = AppServices.cache,
+    private val pushTokens: PushTokens = AppServices.pushTokens,
 ) : ViewModel() {
     var session by mutableStateOf<SessionState>(SessionState.Checking)
         private set
@@ -316,6 +318,7 @@ class WalletViewModel(
             try {
                 val profile = backend.verify()
                 account.load(profile)
+                registerForPush()
                 // Addresses never change for a user, so once per sign-in is enough.
                 try {
                     addresses.value = backend.addresses()
@@ -491,8 +494,29 @@ class WalletViewModel(
         }
     }
 
+    /** Points this account's push notifications at this phone. Push is optional: failures are ignored. */
+    private fun registerForPush() {
+        viewModelScope.launch {
+            try {
+                val token = pushTokens.current() ?: return@launch
+                backend.registerDevice(token)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // No Play services or no connection; the next launch tries again.
+            }
+        }
+    }
+
     fun logOut() {
         viewModelScope.launch {
+            try {
+                pushTokens.current()?.let { backend.unregisterDevice(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // The token is deleted below anyway, which stops pushes to it.
+            }
             try {
                 backend.logout()
             } catch (_: ApiException) {
@@ -515,6 +539,15 @@ class WalletViewModel(
         session = SessionState.SignedOut
         // Nothing of this account stays on the device after signing out.
         viewModelScope.launch { cache.clear() }
+        // A new token for whoever signs in next; the old one stops receiving pushes.
+        viewModelScope.launch {
+            try {
+                pushTokens.delete()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
     }
 }
 

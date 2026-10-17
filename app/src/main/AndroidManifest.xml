@@ -14,6 +14,8 @@
     <uses-feature
         android:name="android.hardware.location.gps"
         android:required="false" />
+    <!-- Push notifications for payments and account changes (asked for on Android 13+). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".PayCeylonApplication"
@@ -49,6 +51,17 @@
                     android:scheme="payceylon" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".push.PayCeylonMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="payments" />
     </application>
 
 </manifest>

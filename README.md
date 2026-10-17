@@ -21,7 +21,7 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
 | Jetpack Compose (Kotlin) | All UI in `ui/` |
 | Local database | Room in `data/local/`: last server snapshot (profile, photo, balances, transactions, notifications, cards/banks, settings); the app opens from it instantly and works read-only offline |
 | Hardware features | Camera (CameraX + ML Kit QR scanning), biometric sensor (app unlock), GPS (nearby ATMs and agents) |
-| Remote data source | PayCeylon REST API (`data/HttpBackend.kt`), Firebase, OpenStreetMap (map tiles; ATMs and banks via the API) |
+| Remote data source | PayCeylon REST API (`data/HttpBackend.kt`), Firebase (sign-in, Cloud Messaging push), OpenStreetMap (map tiles; ATMs and banks via the API) |
 | Authentication | Phone + one-time code issued by the API, then Firebase sign-in (custom token) verified by the API on every request; biometric app lock |
 
 ## Features
@@ -50,11 +50,15 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
 - **Transactions:** full list with filters, and details with fees, reference, on-chain hash
   (crypto) and a shareable receipt.
 - **Notifications** dropdown on the bell: transactions plus account and security changes.
+- **Push notifications** (Firebase Cloud Messaging): money received, sent, swapped, topped up,
+  withdrawn or paid, and account and security changes reach the phone within a few seconds,
+  even with the app closed. Tapping one opens the transaction. Android 13+ asks for permission
+  when the wallet first opens; "Transaction alerts" in Settings turns payment pushes off.
 - **Settings:** personal details (photo, name, username, phone with code check, email),
   cards & bank accounts (card brand detected from the number, with its logo), biometric unlock,
   security and notification toggles, privacy policy, terms, help, log out.
 - **Live updates:** balances, history and notifications refresh every 5 seconds while the app
-  is open, so a payment from another phone appears within seconds.
+  is open, so a payment from another phone appears within seconds (and as a push when closed).
 - **Offline:** the last loaded wallet stays visible with an "Offline · showing saved data" note.
 - **Deep links:** `payceylon://pay?to=<handle>[&amount=][&currency=]` opens Send Money.
 
@@ -99,7 +103,9 @@ app/src/main/java/com/payceylon/app/
 │   ├── Backend.kt               What the screens need from the server (interface), ApiException
 │   ├── HttpBackend.kt           OkHttp + kotlinx.serialization client for the API
 │   ├── PhoneAuth.kt             Code request/confirm via the API, then Firebase custom-token sign-in
+│   ├── PushTokens.kt            This phone's FCM token
 │   └── local/                   Room database (entities, DAO) and the WalletCache over it
+├── push/                        FCM service, notification channels, tap handling
 └── ui/
     ├── PayCeylonApp.kt          Navigation, session states, polling, app lock, offline note
     ├── auth/                    Onboarding, OTP, profile setup, connection-problem screen
@@ -152,7 +158,6 @@ images/                          Source design assets from Figma
 - Swap rates are fixed demo prices; no real bank, card or blockchain transfers happen.
 - Codes go to the server log instead of SMS; a real build would send them through an SMS provider.
 - Bills and reloads are simulated; a real build would connect to each biller or a bill aggregator.
-- No push notifications (FCM); the app polls every 5 seconds while open.
 
 ## Credits
 

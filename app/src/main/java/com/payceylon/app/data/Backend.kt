@@ -98,6 +98,12 @@ interface Backend {
     suspend fun notifications(): List<AppNotification>
     suspend fun markNotificationsRead(ids: List<String>, all: Boolean = false)
 
+    /** Sends this user's push notifications to the phone with FCM registration [token]. */
+    suspend fun registerDevice(token: String)
+
+    /** Stops push notifications to [token] (on logout). */
+    suspend fun unregisterDevice(token: String)
+
     /** Revokes this user's sessions on the server. */
     suspend fun logout()
 }
@@ -110,8 +116,13 @@ object AppServices {
     lateinit var cache: WalletCache
         private set
 
+    /** This phone's push address; does nothing until [init] (e.g. in unit tests). */
+    var pushTokens: PushTokens = PushTokens.None
+        private set
+
     fun init(context: Context, baseUrl: String) {
         if (!::backend.isInitialized) backend = HttpBackend(baseUrl)
         if (!::cache.isInitialized) cache = RoomWalletCache(PayCeylonDatabase.create(context).walletDao())
+        pushTokens = FirebasePushTokens
     }
 }

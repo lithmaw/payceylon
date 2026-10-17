@@ -1,11 +1,15 @@
 package com.payceylon.app.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
@@ -19,6 +23,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.payceylon.app.push.OpenedNotification
+import com.payceylon.app.push.PushNotifications
 import com.payceylon.app.ui.theme.InterFontFamily
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -140,6 +146,9 @@ fun PayCeylonApp(
     /** A `payceylon://` link the app was opened with, waiting to be shown. */
     pendingPaymentLink: PaymentRequest? = null,
     onPaymentLinkHandled: () -> Unit = {},
+    /** A push notification the app was opened from, waiting to be shown. */
+    openedNotification: OpenedNotification? = null,
+    onNotificationHandled: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val account = walletViewModel.account
@@ -290,6 +299,36 @@ fun PayCeylonApp(
             openSendMoney(link, origin = AppDestination.Home)
         }
         onPaymentLinkHandled()
+    }
+
+    // A tapped push opens its transaction (fetched first if it only just happened), else Home.
+    LaunchedEffect(openedNotification, session) {
+        val opened = openedNotification ?: return@LaunchedEffect
+        if (session != SessionState.SignedIn) return@LaunchedEffect
+        account.markRead(opened.notificationId)
+        val transactionId = opened.transactionId
+        if (transactionId != null && walletViewModel.transactions.none { it.id == transactionId }) {
+            walletViewModel.refreshQuietly()
+        }
+        val transaction = walletViewModel.transactions.firstOrNull { it.id == transactionId }
+        if (transaction != null) {
+            selectedTransactionId = transaction.id
+            detailOrigin = AppDestination.Home
+            destination = AppDestination.TransactionDetail
+        } else {
+            destination = AppDestination.Home
+        }
+        onNotificationHandled()
+    }
+
+    // Android 13+ needs permission before pushes can show; asked once the wallet is open.
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(session) {
+        if (session == SessionState.SignedIn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !PushNotifications.canPost(context)
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     BackHandler(enabled = inWallet && destination != AppDestination.Home) {

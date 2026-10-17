@@ -2,6 +2,7 @@ package com.payceylon.app.ui.wallet
 
 import com.payceylon.app.data.ApiException
 import com.payceylon.app.data.FakeBackend
+import com.payceylon.app.data.FakePushTokens
 import com.payceylon.app.data.FakeWalletCache
 import com.payceylon.app.data.local.WalletSnapshot
 import com.payceylon.app.ui.account.AccountSetting
@@ -192,6 +193,26 @@ class WalletViewModelTest {
         assertEquals(SessionState.SignedOut, wallet.session)
         assertTrue(wallet.transactions.isEmpty())
         assertEquals(BigDecimal.ZERO, wallet.balanceOf(Asset.LKR))
+    }
+
+    @Test
+    fun signingInRegistersThisPhoneForPushAndLoggingOutRemovesIt() = runTest {
+        val push = FakePushTokens()
+        val wallet = WalletViewModel(backend, cache, push)
+        assertEquals(listOf("token-1"), backend.devices)
+        wallet.logOut()
+        assertTrue(backend.devices.isEmpty())
+        assertEquals(1, push.deleted)
+    }
+
+    @Test
+    fun pushRegistrationFailingDoesNotStopSignIn() = runTest {
+        val push = object : com.payceylon.app.data.PushTokens {
+            override suspend fun current(): String = throw java.io.IOException("SERVICE_NOT_AVAILABLE")
+            override suspend fun delete() = Unit
+        }
+        assertEquals(SessionState.SignedIn, WalletViewModel(backend, cache, push).session)
+        assertTrue(backend.devices.isEmpty())
     }
 
     // --- Local database (Room cache) ---------------------------------------------------------
