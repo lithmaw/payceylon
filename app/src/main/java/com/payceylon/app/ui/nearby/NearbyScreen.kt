@@ -42,10 +42,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -78,6 +76,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.payceylon.app.R
 import com.payceylon.app.data.ApiException
+import com.payceylon.app.ui.components.bounceClick
 import com.payceylon.app.ui.components.showError
 import com.payceylon.app.ui.components.tap
 import com.payceylon.app.ui.theme.InterFontFamily
@@ -153,8 +152,7 @@ fun NearbyScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var movedAway by remember { mutableStateOf(false) }
     var filter by rememberSaveable { mutableStateOf(PlaceFilter.All) }
-    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
-    var askOpenId by rememberSaveable { mutableStateOf<String?>(null) }
+
 
     val visible = places.filter(filter::matches)
 
@@ -167,7 +165,6 @@ fun NearbyScreen(
             val result = loadPlaces(centre.latitude, centre.longitude, SEARCH_RADIUS_METERS)
             places = result.places
             banksAvailable = result.banksAvailable
-            if (places.none { it.id == selectedId }) selectedId = null
         } catch (e: ApiException) {
             error = e.message
         } finally {
@@ -234,24 +231,21 @@ fun NearbyScreen(
         mapView?.controller?.animateTo(centre, 15.0, 600L)
     }
 
-    // Markers: redrawn when the list, filter, selection or the user's position changes.
-    val icons = remember { mutableMapOf<Pair<PlaceKind, Boolean>, BitmapDrawable>() }
-    LaunchedEffect(mapView, visible, selectedId, userLocation) {
+    // Markers: redrawn when the list, filter or the user's position changes.
+    val icons = remember { mutableMapOf<PlaceKind, BitmapDrawable>() }
+    LaunchedEffect(mapView, visible, userLocation) {
         val map = mapView ?: return@LaunchedEffect
         map.overlays.removeAll { it is Marker }
-        // The selected pin is added after the others so it draws on top.
-        visible.sortedBy { it.id == selectedId }.forEach { place ->
-            val selected = place.id == selectedId
+        visible.forEach { place ->
             map.overlays.add(
                 Marker(map).apply {
                     position = GeoPoint(place.latitude, place.longitude)
-                    icon = icons.getOrPut(place.kind to selected) { placePin(context, place.kind, selected) }
+                    icon = icons.getOrPut(place.kind) { placePin(context, place.kind) }
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     title = place.name
                     infoWindow = null
                     setOnMarkerClickListener { _, _ ->
-                        selectedId = place.id
-                        askOpenId = place.id
+                        openDirections(context, place)
                         true
                     }
                 },
@@ -270,15 +264,6 @@ fun NearbyScreen(
             )
         }
         map.invalidate()
-    }
-
-    LaunchedEffect(selectedId) {
-        val place = places.firstOrNull { it.id == selectedId } ?: return@LaunchedEffect
-        mapView?.let { map ->
-            map.controller.animateTo(GeoPoint(place.latitude, place.longitude), max(map.zoomLevelDouble, 16.0), 500L)
-        }
-        val index = visible.indexOfFirst { it.id == selectedId }
-        if (index >= 0) listState.animateScrollToItem(index)
     }
 
     Box(
@@ -463,10 +448,7 @@ fun NearbyScreen(
                     FilterChip(
                         label = "${option.label} ${places.count(option::matches)}",
                         selected = option == filter,
-                        onClick = {
-                            filter = option
-                            if (places.firstOrNull { it.id == selectedId }?.let(option::matches) != true) selectedId = null
-                        },
+                        onClick = { filter = option },
                     )
                 }
             }
@@ -503,102 +485,27 @@ fun NearbyScreen(
                     items(visible, key = { it.id }) { place ->
                         PlaceRow(
                             place = place,
-                            selected = place.id == selectedId,
-                            onClick = {
-                                selectedId = place.id
-                                askOpenId = place.id
-                            },
+                            onClick = { openDirections(context, place) },
                         )
                     }
                 }
             }
         }
     }
-
-    places.firstOrNull { it.id == askOpenId }?.let { place ->
-        OpenInMapsDialog(
-            place = place,
-            onOpen = {
-                askOpenId = null
-                openDirections(context, place)
-            },
-            onDismiss = { askOpenId = null },
-        )
-    }
-}
-
-/** Asks before leaving the app for walking directions in Google Maps. */
-@Composable
-private fun OpenInMapsDialog(place: NearbyPlace, onOpen: () -> Unit, onDismiss: () -> Unit) {
-    val colors = LocalWalletColors.current
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = colors.card,
-        icon = {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(place.kind.color.copy(alpha = 0.1f), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(
-                    painter = painterResource(place.kind.icon),
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                    colorFilter = ColorFilter.tint(place.kind.color),
-                )
-            }
-        },
-        title = {
-            Text(place.name, color = colors.content, fontFamily = InterFontFamily, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                val details = buildList {
-                    add(listOf(place.kindLabel, formatDistance(place.distanceMeters) + " away").joinToString(" · "))
-                    if (place.address.isNotBlank()) add(place.address)
-                    if (place.kind == PlaceKind.Agent) add("Cash in and cash out for your PayCeylon wallet")
-                    place.openingHours?.let { add("Hours: $it") }
-                }
-                details.forEach {
-                    Text(it, color = colors.contentSecondary, fontFamily = InterFontFamily, fontSize = 14.sp)
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Open walking directions in Google Maps?",
-                    color = colors.content,
-                    fontFamily = InterFontFamily,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onOpen) {
-                Text("Open Google Maps", color = PayCeylonPrimary, fontFamily = InterFontFamily, fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = colors.content, fontFamily = InterFontFamily, fontWeight = FontWeight.Medium)
-            }
-        },
-    )
 }
 
 @Composable
 private fun PlaceRow(
     place: NearbyPlace,
-    selected: Boolean,
     onClick: () -> Unit,
 ) {
     val colors = LocalWalletColors.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .tap(onClick = onClick)
+            .bounceClick(pressedScale = 0.97f, onClick = onClick)
             .clip(RoundedCornerShape(20.dp))
-            .background(if (selected) PayCeylonPrimary.copy(alpha = 0.08f) else colors.card)
+            .background(colors.card)
             .padding(horizontal = 12.dp, vertical = 11.dp),
     ) {
         Row(
@@ -771,10 +678,10 @@ private fun openDirections(context: Context, place: NearbyPlace) {
     }
 }
 
-/** Round pin in the place's colour with a white ring and glyph; bigger when selected. */
-private fun placePin(context: Context, kind: PlaceKind, selected: Boolean): BitmapDrawable {
+/** Round pin in the place's colour with a white ring and glyph. */
+private fun placePin(context: Context, kind: PlaceKind): BitmapDrawable {
     val density = context.resources.displayMetrics.density
-    val size = ((if (selected) 44 else 32) * density).roundToInt()
+    val size = (32 * density).roundToInt()
     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)

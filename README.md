@@ -45,7 +45,7 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
 - **Nearby** (fiat wallet, on the balance card): map of ATMs and bank branches (real
   OpenStreetMap data) and PayCeylon cash agents (simulated, around Kurunegala) within 3 km of
   the phone's GPS position, with All / Agents / ATMs / Banks filters, a list by distance,
-  "Search this area" after panning; tapping a place asks to open walking directions in Google Maps. Without location it
+  "Search this area" after panning; tapping a place opens walking directions in Google Maps. Without location it
   shows Kurunegala town.
 - **Transactions:** full list with filters, and details with fees, reference, on-chain hash
   (crypto) and a shareable receipt.
