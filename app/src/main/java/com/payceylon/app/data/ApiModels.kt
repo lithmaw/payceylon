@@ -156,7 +156,11 @@ internal data class PlaceDto(
 )
 
 @Serializable
-internal data class PlacesResponse(val items: List<PlaceDto>, val banksAvailable: Boolean = true)
+internal data class PlacesResponse(
+    val items: List<PlaceDto>,
+    val banksAvailable: Boolean = true,
+    val radiusMeters: Int? = null,
+)
 
 @Serializable
 internal data class BillerDto(

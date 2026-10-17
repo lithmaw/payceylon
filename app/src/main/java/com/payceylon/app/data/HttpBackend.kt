@@ -171,7 +171,7 @@ class HttpBackend(baseUrl: String) : Backend {
                 openingHours = dto.openingHours,
             )
         }
-        return NearbyPlaces(places, response.banksAvailable)
+        return NearbyPlaces(places, response.banksAvailable, response.radiusMeters ?: radiusMeters)
     }
 
     override suspend fun send(toHandle: String, amount: BigDecimal, asset: Asset, idempotencyKey: String): WalletTransaction =

@@ -39,12 +39,13 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
 - **Swap** between LKR and tokens at indicative rates (0.5% fee).
 - **Top Up / Withdraw** (fiat only): top up from a linked card (1.5% fee) or bank (free), withdraw
   to a bank (LKR 25 fee). Crypto is bought and sold by swapping with LKR.
-- **Pay bills** (fiat wallet): CEB, LECO, Water Board, SLT Fibre and Dialog TV bills (simulated
+- **Pay bills** (fiat wallet, with each company's logo): CEB, LECO, Water Board, SLT Fibre and Dialog TV bills (simulated
   amount due, editable) and Dialog / Mobitel / Hutch reloads, paid from LKR with no fee. Paid
   accounts appear under Recent for one-tap repeat payments.
 - **Nearby** (fiat wallet, on the balance card): map of ATMs and bank branches (real
-  OpenStreetMap data) and PayCeylon cash agents (simulated, around Kurunegala) within 3 km of
-  the phone's GPS position, with All / Agents / ATMs / Banks filters, a list by distance,
+  OpenStreetMap data for all of Sri Lanka, saved in the API) and PayCeylon cash agents
+  (simulated, around Kurunegala) within 3 km of the phone's GPS position (the nearest ATMs and
+  banks up to 15 km away when there are none that close), with All / Agents / ATMs / Banks filters, a list by distance,
   "Search this area" after panning; tapping a place opens walking directions in Google Maps. Without location it
   shows Kurunegala town.
 - **Transactions:** full list with filters, and details with fees, reference, on-chain hash
@@ -158,6 +159,8 @@ images/                          Source design assets from Figma
 - Swap rates are fixed demo prices; no real bank, card or blockchain transfers happen.
 - Codes go to the server log instead of SMS; a real build would send them through an SMS provider.
 - Bills and reloads are simulated; a real build would connect to each biller or a bill aggregator.
+- ATM and bank locations are a saved OpenStreetMap copy (`backend/scripts/fetch_osm_banking.py`
+  refreshes it), so new places appear only after a refresh.
 
 ## Credits
 
@@ -166,5 +169,7 @@ images/                          Source design assets from Figma
 - Card network logos: [svg-credit-card-payment-icons](https://github.com/aaronfagan/svg-credit-card-payment-icons)
   (Apache 2.0), converted to vector drawables.
 - Glass blur: [Haze](https://github.com/chrisbanes/haze) (Apache 2.0).
+- Biller logos (CEB, LECO, NWSDB, Dialog, SLT-Mobitel, Hutch, Dialog TV) are trademarks of their
+  owners, taken from Wikipedia and used only to identify each company.
 - Map: [osmdroid](https://github.com/osmdroid/osmdroid) (Apache 2.0); map tiles and ATM/bank data
   © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).

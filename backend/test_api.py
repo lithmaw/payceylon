@@ -510,14 +510,30 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(body["items"]), 3)
         self.assertTrue(all(place["kind"] == "AGENT" and place["distanceMeters"] < 1000 for place in body["items"]))
 
-    async def test_osm_banking_uses_kurunegala_snapshot_when_overpass_is_down(self):
+    async def test_osm_banking_in_sri_lanka_comes_from_the_snapshot_without_overpass(self):
         main._places_cache.clear()
-        with mock.patch.object(main, "overpass", mock.AsyncMock(side_effect=RuntimeError("down"))):
-            elements = await main.osm_banking(7.4863, 80.3647, 3000)
-            self.assertTrue(elements)
-            self.assertTrue(all(element["tags"]["amenity"] in ("atm", "bank") for element in elements))
+        down = mock.AsyncMock(side_effect=RuntimeError("down"))
+        with mock.patch.object(main, "overpass", down):
+            for lat, lon in ((7.4863, 80.3647), (6.9271, 79.8612), (9.6615, 80.0255)):
+                elements = await main.osm_banking(lat, lon, 3000)  # Kurunegala, Colombo, Jaffna
+                self.assertTrue(elements, (lat, lon))
+                self.assertTrue(all(element["tags"]["amenity"] in ("atm", "bank") for element in elements))
+                self.assertTrue(all(main.distance_m(lat, lon, e["lat"], e["lon"]) <= 3000 for e in elements))
+            down.assert_not_called()
             with self.assertRaises(RuntimeError):
-                await main.osm_banking(6.9271, 79.8612, 3000)  # Colombo: outside the snapshot
+                await main.osm_banking(13.0827, 80.2707, 3000)  # Chennai: outside Sri Lanka
+
+    async def test_nearby_places_widen_to_the_nearest_banks_when_none_are_close(self):
+        token, _ = await self.sign_up()
+        params = {"lat": 7.4939, "lon": 80.2429}  # 13 km west of Kurunegala; the nearest bank is ~7.5 km away
+        response = await self.client.get("/v1/places/nearby", headers=self.auth(token), params=params)
+        body = response.json()
+        self.assertEqual(body["radiusMeters"], main.WIDE_SEARCH_METERS)
+        banking = [place for place in body["items"] if place["kind"] != "AGENT"]
+        self.assertTrue(0 < len(banking) <= main.WIDE_SEARCH_LIMIT)
+        self.assertTrue(all(3000 < place["distanceMeters"] <= main.WIDE_SEARCH_METERS for place in banking))
+        town = await self.client.get("/v1/places/nearby", headers=self.auth(token), params={"lat": 7.4867, "lon": 80.3647})
+        self.assertEqual(town.json()["radiusMeters"], 3000)
 
     async def test_nearby_places_require_auth_and_valid_coordinates(self):
         token, _ = await self.sign_up()

@@ -37,7 +37,7 @@ import com.payceylon.app.ui.theme.PayCeylonPrimary
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
-import com.payceylon.app.ui.wallet.TransactionGlyph
+import com.payceylon.app.ui.wallet.TransactionIcon
 import com.payceylon.app.ui.wallet.WalletTransaction
 
 private enum class NotificationFilter(val label: String) { All("All"), Transactions("Transactions"), Account("Account") }
@@ -159,15 +159,17 @@ private fun NotificationRow(notification: AppNotification, transaction: WalletTr
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .background(if (notification.read) colors.subtle else colors.card, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            when {
-                transaction != null -> TransactionGlyph(transaction.direction, size = 20.dp)
-                else -> LineIcon(if (notification.kind == NotificationKind.Security) R.drawable.ic_shield else R.drawable.ic_user)
+        val iconBackground = if (notification.read) colors.subtle else colors.card
+        if (transaction != null) {
+            TransactionIcon(transaction, size = 38.dp, glyphSize = 20.dp, background = iconBackground)
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(iconBackground, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                LineIcon(if (notification.kind == NotificationKind.Security) R.drawable.ic_shield else R.drawable.ic_user)
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {

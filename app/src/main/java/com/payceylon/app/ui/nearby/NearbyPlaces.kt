@@ -20,8 +20,11 @@ data class NearbyPlace(
     val openingHours: String? = null,
 )
 
-/** [banksAvailable] is false when OpenStreetMap couldn't be reached, so only agents are listed. */
-data class NearbyPlaces(val places: List<NearbyPlace>, val banksAvailable: Boolean)
+/**
+ * [banksAvailable] is false when OpenStreetMap couldn't be reached, so only agents are listed.
+ * [radiusMeters] is how far the server looked: wider than asked when few ATMs and banks are close.
+ */
+data class NearbyPlaces(val places: List<NearbyPlace>, val banksAvailable: Boolean, val radiusMeters: Int)
 
 enum class PlaceFilter(val label: String) {
     All("All"),

@@ -68,7 +68,6 @@ import com.payceylon.app.ui.wallet.AmountDisplay
 import com.payceylon.app.ui.wallet.AmountKeypad
 import com.payceylon.app.ui.wallet.Asset
 import com.payceylon.app.ui.wallet.FundsSuccess
-import com.payceylon.app.ui.wallet.MethodBadge
 import com.payceylon.app.ui.wallet.PageHeader
 import com.payceylon.app.ui.wallet.QuickAmountRow
 import com.payceylon.app.ui.wallet.appendAmountKey
@@ -390,7 +389,7 @@ private fun BillerRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        MethodBadge(biller.category.icon)
+        BillerBadge(biller)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, color = colors.content, fontFamily = InterFontFamily, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             Text(
@@ -463,7 +462,7 @@ private fun AccountStep(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            MethodBadge(biller.category.icon)
+            BillerBadge(biller)
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(biller.name, color = colors.content, fontFamily = InterFontFamily, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(
@@ -582,7 +581,7 @@ private fun AmountStep(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            MethodBadge(biller.category.icon)
+            BillerBadge(biller)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
                     if (biller.isReload) "Reload" else "Pay to",

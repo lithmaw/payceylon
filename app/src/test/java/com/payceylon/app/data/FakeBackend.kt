@@ -124,6 +124,7 @@ class FakeBackend(
         return NearbyPlaces(
             listOf(NearbyPlace("agent-1", PlaceKind.Agent, "Siri Grocery", "Kandy Road, Kurunegala", latitude, longitude, 120)),
             banksAvailable = true,
+            radiusMeters = radiusMeters,
         )
     }
 

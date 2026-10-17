@@ -92,6 +92,7 @@ import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
@@ -148,6 +149,7 @@ fun NearbyScreen(
     var searchCentre by remember { mutableStateOf<GeoPoint?>(null) }
     var places by remember { mutableStateOf(emptyList<NearbyPlace>()) }
     var banksAvailable by remember { mutableStateOf(true) }
+    var searchedRadius by remember { mutableStateOf(SEARCH_RADIUS_METERS) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var movedAway by remember { mutableStateOf(false) }
@@ -165,6 +167,7 @@ fun NearbyScreen(
             val result = loadPlaces(centre.latitude, centre.longitude, SEARCH_RADIUS_METERS)
             places = result.places
             banksAvailable = result.banksAvailable
+            searchedRadius = result.radiusMeters
         } catch (e: ApiException) {
             error = e.message
         } finally {
@@ -226,9 +229,16 @@ fun NearbyScreen(
         }
     }
 
-    LaunchedEffect(mapView, searchCentre) {
+    LaunchedEffect(mapView, searchCentre, places) {
         val centre = searchCentre ?: return@LaunchedEffect
-        mapView?.controller?.animateTo(centre, 15.0, 600L)
+        val map = mapView ?: return@LaunchedEffect
+        if (searchedRadius > SEARCH_RADIUS_METERS && places.isNotEmpty()) {
+            // The nearest ATMs and banks are further out: zoom out until they are on the map.
+            val points = places.map { GeoPoint(it.latitude, it.longitude) } + centre
+            map.post { map.zoomToBoundingBox(BoundingBox.fromGeoPointsSafe(points), true, 120) }
+        } else {
+            map.controller.animateTo(centre, 15.0, 600L)
+        }
     }
 
     // Markers: redrawn when the list, filter or the user's position changes.
@@ -418,7 +428,11 @@ fun NearbyScreen(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = "ATMs, banks and PayCeylon agents within ${SEARCH_RADIUS_METERS / 1000} km",
+                    text = if (searchedRadius > SEARCH_RADIUS_METERS) {
+                        "No ATMs or banks within ${SEARCH_RADIUS_METERS / 1000} km. Showing the nearest ones."
+                    } else {
+                        "ATMs, banks and PayCeylon agents within ${SEARCH_RADIUS_METERS / 1000} km"
+                    },
                     color = colors.contentSecondary,
                     fontFamily = InterFontFamily,
                     fontSize = 13.sp,
@@ -471,7 +485,7 @@ fun NearbyScreen(
                 }
                 visible.isEmpty() -> CenteredMessage {
                     Text(
-                        text = "Nothing found within ${SEARCH_RADIUS_METERS / 1000} km.",
+                        text = "Nothing found within ${searchedRadius / 1000} km.",
                         color = colors.contentSecondary,
                         fontFamily = InterFontFamily,
                         fontSize = 14.sp,

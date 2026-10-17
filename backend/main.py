@@ -941,12 +941,26 @@ OVERPASS_URLS = (
 )
 OVERPASS_TIMEOUT_SECONDS = 5
 PLACES_CACHE_SECONDS = 3600
+# Under this many ATMs and banks in range, Nearby shows the nearest WIDE_SEARCH_LIMIT within WIDE_SEARCH_METERS.
+WIDE_SEARCH_MIN_PLACES = 3
+WIDE_SEARCH_METERS = 15000
+WIDE_SEARCH_LIMIT = 10
 # (lat, lon, radius) rounded -> (fetched at, OpenStreetMap elements)
 _places_cache: dict[tuple[float, float, int], tuple[float, list[dict[str, Any]]]] = {}
-# Saved OpenStreetMap ATMs and banks within OSM_SNAPSHOT_RADIUS of Kurunegala, used when Overpass is down.
-OSM_SNAPSHOT_PATH = Path(__file__).parent / "data" / "osm_banking_kurunegala.json"
-OSM_SNAPSHOT_CENTRE = (7.4863, 80.3647)
-OSM_SNAPSHOT_RADIUS = 12000
+# Every OpenStreetMap ATM and bank in Sri Lanka, saved from Overpass. The public Overpass
+# servers are often at capacity, so places in Sri Lanka come from this file; Overpass is only
+# asked about points outside it.
+OSM_SNAPSHOT_PATH = Path(__file__).parent / "data" / "osm_banking_sri_lanka.json"
+# Sri Lanka's bounding box (south, west, north, east), with a little sea around it.
+OSM_SNAPSHOT_BOUNDS = (5.7, 79.4, 10.0, 82.1)
+_snapshot: list[dict[str, Any]] | None = None
+
+
+def osm_snapshot() -> list[dict[str, Any]]:
+    global _snapshot
+    if _snapshot is None:
+        _snapshot = json.loads(OSM_SNAPSHOT_PATH.read_text(encoding="utf-8"))["elements"]
+    return _snapshot
 
 
 def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
@@ -983,8 +997,11 @@ async def overpass(query: str) -> list[dict[str, Any]]:
 async def osm_banking(lat: float, lon: float, radius: int) -> list[dict[str, Any]]:
     """ATMs and bank branches from OpenStreetMap (Overpass API), cached per area for an hour.
 
-    When Overpass is down: the last answer for the area, else the saved Kurunegala snapshot.
+    Inside Sri Lanka: the saved snapshot. Elsewhere: Overpass, falling back to the last answer.
     """
+    south, west, north, east = OSM_SNAPSHOT_BOUNDS
+    if south <= lat <= north and west <= lon <= east:
+        return [element for element in osm_snapshot() if distance_m(lat, lon, element["lat"], element["lon"]) <= radius]
     key = (round(lat, 2), round(lon, 2), radius)
     cached = _places_cache.get(key)
     now = asyncio.get_running_loop().time()
@@ -1001,8 +1018,6 @@ async def osm_banking(lat: float, lon: float, radius: int) -> list[dict[str, Any
         logging.getLogger("payceylon").warning("Overpass unavailable for %s", key)
         if cached:
             return cached[1]
-        if distance_m(lat, lon, *OSM_SNAPSHOT_CENTRE) + radius <= OSM_SNAPSHOT_RADIUS and OSM_SNAPSHOT_PATH.exists():
-            return json.loads(OSM_SNAPSHOT_PATH.read_text(encoding="utf-8"))["elements"]
         raise
     _places_cache[key] = (now, elements)
     return elements
@@ -1067,14 +1082,26 @@ async def nearby_places(
     radius: int = Query(default=3000, ge=500, le=10000),
 ) -> dict[str, Any]:
     places = agent_places(lat, lon, radius)
+    searched = radius
     banking_available = True
     try:
-        elements = await osm_banking(lat, lon, radius)
-        places += [p for p in (osm_place(e, lat, lon) for e in elements) if p and p["distanceMeters"] <= radius]
+        banking = await banking_places(lat, lon, radius)
+        if len(banking) < WIDE_SEARCH_MIN_PLACES and radius < WIDE_SEARCH_METERS:
+            # Few or none close by (outside towns): show the nearest ones further out instead.
+            searched = WIDE_SEARCH_METERS
+            banking = (await banking_places(lat, lon, searched))[:WIDE_SEARCH_LIMIT]
+        places += banking
     except RuntimeError:
         banking_available = False
     places.sort(key=lambda place: place["distanceMeters"])
-    return {"items": places, "banksAvailable": banking_available}
+    return {"items": places, "banksAvailable": banking_available, "radiusMeters": searched}
+
+
+async def banking_places(lat: float, lon: float, radius: int) -> list[dict[str, Any]]:
+    """ATMs and banks within [radius], nearest first."""
+    elements = await osm_banking(lat, lon, radius)
+    places = [p for p in (osm_place(e, lat, lon) for e in elements) if p and p["distanceMeters"] <= radius]
+    return sorted(places, key=lambda place: place["distanceMeters"])
 
 
 @app.get("/v1/wallet/summary")

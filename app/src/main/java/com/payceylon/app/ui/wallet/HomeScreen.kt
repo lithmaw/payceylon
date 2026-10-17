@@ -736,14 +736,7 @@ internal fun TransactionRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(50.dp)
-                    .background(LocalWalletColors.current.subtle, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                TransactionGlyph(transaction.direction, size = 24.dp)
-            }
+            TransactionIcon(transaction, size = 50.dp, glyphSize = 24.dp, background = LocalWalletColors.current.subtle)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = transaction.title,

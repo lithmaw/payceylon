@@ -127,15 +127,13 @@ fun TransactionDetailScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(28.dp))
-            Box(
-                modifier = Modifier
-                    .staggeredEntrance(0)
-                    .size(64.dp)
-                    .background(colors.card, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                TransactionGlyph(transaction.direction, size = 28.dp)
-            }
+            TransactionIcon(
+                transaction,
+                size = 64.dp,
+                glyphSize = 28.dp,
+                background = colors.card,
+                modifier = Modifier.staggeredEntrance(0),
+            )
             Spacer(Modifier.height(18.dp))
             Text(
                 text = headlineAmount(transaction),

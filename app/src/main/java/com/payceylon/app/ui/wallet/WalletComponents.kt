@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import com.payceylon.app.R
+import com.payceylon.app.ui.bills.BillerLogo
+import com.payceylon.app.ui.bills.billerLogoForName
 import com.payceylon.app.ui.components.bounceClick
 import com.payceylon.app.ui.theme.LocalWalletColors
 import com.payceylon.app.ui.theme.InterFontFamily
@@ -155,6 +157,33 @@ internal fun AssetIcon(asset: Asset, modifier: Modifier = Modifier) {
 internal fun AssetBadge(asset: Asset) {
     val token = asset.token
     if (token == null) WalletBadge(WalletType.Fiat) else TokenBadge(token, size = 36)
+}
+
+/**
+ * A transaction's round icon: the biller's logo for bill payments, otherwise [TransactionGlyph]
+ * on a [background] circle.
+ */
+@Composable
+internal fun TransactionIcon(
+    transaction: WalletTransaction,
+    size: Dp,
+    glyphSize: Dp,
+    background: Color,
+    modifier: Modifier = Modifier,
+) {
+    val logo = if (transaction.direction == TransactionDirection.Bill) billerLogoForName(transaction.counterpartyName) else null
+    if (logo != null) {
+        BillerLogo(logo, size, modifier)
+    } else {
+        Box(
+            modifier = modifier
+                .size(size)
+                .background(background, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            TransactionGlyph(transaction.direction, size = glyphSize)
+        }
+    }
 }
 
 /**

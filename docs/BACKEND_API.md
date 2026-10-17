@@ -328,7 +328,7 @@ transaction.
 
 | Method | Path | Body | Response |
 | --- | --- | --- | --- |
-| GET | `/places/nearby?lat=7.4867&lon=80.3647&radius=3000` | – | `{ "items": [Place], "banksAvailable": true }` |
+| GET | `/places/nearby?lat=7.4867&lon=80.3647&radius=3000` | – | `{ "items": [Place], "banksAvailable": true, "radiusMeters": 3000 }` |
 
 ```json
 {
@@ -340,10 +340,15 @@ transaction.
 
 - `kind` is `ATM`, `BANK` or `AGENT`; `radius` is 500 to 10000 metres (default 3000). Items are
   nearest first; `address` and `openingHours` may be empty or null.
-- ATMs and banks are real OpenStreetMap data from the Overpass API: every public Overpass server is
-  asked at once (5 s limit) and answers are cached per area for an hour. When none answers, the
-  last answer for the area is used, then the saved snapshot `backend/data/osm_banking_kurunegala.json`
-  (12 km around Kurunegala); elsewhere `banksAvailable` is `false` and only agents are returned.
+- ATMs and banks are real OpenStreetMap data. In Sri Lanka they come from
+  `backend/data/osm_banking_sri_lanka.json`, every ATM and bank in the country saved from the
+  Overpass API (the public Overpass servers are often at capacity). Outside Sri Lanka every public
+  Overpass server is asked at once (5 s limit), answers are cached per area for an hour, and when
+  none answers the last answer is used; with none, `banksAvailable` is `false` and only agents are
+  returned.
+- With fewer than 3 ATMs and banks within `radius`, the nearest 10 within 15 km are returned
+  instead and `radiusMeters` is `15000` (the distance searched); otherwise it equals `radius`.
+- Run `python backend/scripts/fetch_osm_banking.py` to refresh the Sri Lanka file.
 - PayCeylon agents (cash in / cash out shops) are simulated, with made-up names around Kurunegala
   town. Anywhere with none in range, three are placed a few hundred metres from the point asked.
 
