@@ -69,85 +69,90 @@ internal fun HomeDrawer(
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 20.dp),
         ) {
-            Row(
+            // Everything but Log out scrolls; Log out stays at the very bottom.
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .bounceClick(pressedScale = 0.98f) { onItem(DrawerItem.Profile) }
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
             ) {
-                ProfileAvatar(photo = photo, size = 48.dp, name = name)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        text = name,
-                        color = colors.content,
-                        fontFamily = InterFontFamily,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "@$handle",
-                        color = colors.contentSecondary,
-                        fontFamily = InterFontFamily,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            DrawerHeading("Wallets")
-            WalletType.entries.forEach { wallet ->
-                val selected = wallet == selectedWallet
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .bounceClick(pressedScale = 0.98f) { onWalletChange(wallet) }
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(if (selected) colors.card else Color.Transparent)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .bounceClick(pressedScale = 0.98f) { onItem(DrawerItem.Profile) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    WalletBadge(wallet)
-                    Text(
-                        text = wallet.label,
-                        modifier = Modifier.weight(1f),
-                        color = colors.content,
-                        fontFamily = InterFontFamily,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    if (selected) {
-                        Image(
-                            painter = painterResource(R.drawable.ic_check),
-                            contentDescription = "Selected",
-                            modifier = Modifier.size(18.dp),
-                            colorFilter = ColorFilter.tint(PayCeylonPrimary),
+                    ProfileAvatar(photo = photo, size = 48.dp, name = name)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            text = name,
+                            color = colors.content,
+                            fontFamily = InterFontFamily,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "@$handle",
+                            color = colors.contentSecondary,
+                            fontFamily = InterFontFamily,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
+
+                DrawerHeading("Wallets")
+                WalletType.entries.forEach { wallet ->
+                    val selected = wallet == selectedWallet
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bounceClick(pressedScale = 0.98f) { onWalletChange(wallet) }
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (selected) colors.card else Color.Transparent)
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        WalletBadge(wallet)
+                        Text(
+                            text = wallet.label,
+                            modifier = Modifier.weight(1f),
+                            color = colors.content,
+                            fontFamily = InterFontFamily,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        if (selected) {
+                            Image(
+                                painter = painterResource(R.drawable.ic_check),
+                                contentDescription = "Selected",
+                                modifier = Modifier.size(18.dp),
+                                colorFilter = ColorFilter.tint(PayCeylonPrimary),
+                            )
+                        }
+                    }
+                }
+
+                DrawerHeading("Money")
+                DrawerRow(R.drawable.ic_doc, "Transaction history") { onItem(DrawerItem.History) }
+                DrawerRow(R.drawable.ic_scan, "My QR code") { onItem(DrawerItem.Receive) }
+                DrawerRow(R.drawable.ic_bills, "Pay bills") { onItem(DrawerItem.Bills) }
+                DrawerRow(R.drawable.ic_location, "ATMs & agents nearby") { onItem(DrawerItem.Nearby) }
+
+                DrawerHeading("Account")
+                DrawerRow(R.drawable.ic_top_up, "Cards & bank accounts") { onItem(DrawerItem.PaymentMethods) }
+                DrawerRow(R.drawable.ic_user, "Account settings") { onItem(DrawerItem.Settings) }
+                DrawerRow(R.drawable.ic_help, "Help & support") { onItem(DrawerItem.Help) }
             }
-
-            DrawerHeading("Money")
-            DrawerRow(R.drawable.ic_doc, "Transaction history") { onItem(DrawerItem.History) }
-            DrawerRow(R.drawable.ic_scan, "My QR code") { onItem(DrawerItem.Receive) }
-            DrawerRow(R.drawable.ic_bills, "Pay bills") { onItem(DrawerItem.Bills) }
-            DrawerRow(R.drawable.ic_location, "ATMs & agents nearby") { onItem(DrawerItem.Nearby) }
-
-            DrawerHeading("Account")
-            DrawerRow(R.drawable.ic_top_up, "Cards & bank accounts") { onItem(DrawerItem.PaymentMethods) }
-            DrawerRow(R.drawable.ic_user, "Account settings") { onItem(DrawerItem.Settings) }
-            DrawerRow(R.drawable.ic_help, "Help & support") { onItem(DrawerItem.Help) }
-
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
             DrawerRow(R.drawable.ic_logout, "Log out", tint = PayCeylonPrimary) { confirmLogOut = true }
         }
     }
@@ -206,12 +211,12 @@ private fun DrawerRow(
             .bounceClick(pressedScale = 0.98f, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Image(
             painter = painterResource(icon),
             contentDescription = null,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(18.dp),
             colorFilter = ColorFilter.tint(tint),
         )
         Text(

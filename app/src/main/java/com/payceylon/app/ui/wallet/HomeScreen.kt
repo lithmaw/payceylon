@@ -1,5 +1,14 @@
 package com.payceylon.app.ui.wallet
 
+import androidx.compose.animation.core.animate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.Velocity
 import androidx.annotation.DrawableRes
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.AnimationVector1D
@@ -194,6 +203,42 @@ fun HomeScreen(
         scope.launch { drawerState.close() }
     }
 
+    // Pull down past the top of the list to switch to the other wallet (as in Binance).
+    val otherWallet = if (isCrypto) WalletType.Fiat else WalletType.Crypto
+    val density = LocalDensity.current
+    val pullThresholdPx = with(density) { PullToSwitchThreshold.toPx() }
+    var pullPx by remember { mutableFloatStateOf(0f) }
+    val haptics = LocalHapticFeedback.current
+    val pullToSwitch = remember(otherWallet) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Scrolling back up first undoes the pull.
+                if (pullPx <= 0f || available.y >= 0f) return Offset.Zero
+                val used = maxOf(available.y, -pullPx)
+                pullPx += used
+                return Offset(0f, used)
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
+                val before = pullPx
+                // Resistance grows as the pull lengthens.
+                pullPx += available.y * (0.5f - 0.3f * (pullPx / (pullThresholdPx * 2)).coerceIn(0f, 1f))
+                if (before < pullThresholdPx && pullPx >= pullThresholdPx) {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                }
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (pullPx <= 0f) return Velocity.Zero
+                if (pullPx >= pullThresholdPx) onWalletChange(otherWallet)
+                animate(pullPx, 0f, animationSpec = tween(320, easing = PayCeylonEasing)) { value, _ -> pullPx = value }
+                return available
+            }
+        }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         modifier = modifier,
@@ -242,7 +287,9 @@ fun HomeScreen(
             // Inset (and clipped) below the status bar so cards never scroll under the clock.
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding(),
+                .statusBarsPadding()
+                .nestedScroll(pullToSwitch)
+                .graphicsLayer { translationY = pullPx },
             contentPadding = PaddingValues(
                 start = 20.dp,
                 end = 20.dp,
@@ -251,11 +298,22 @@ fun HomeScreen(
                 bottom = 150.dp,
             ),
         ) {
-            item(key = "menu") {
-                MenuButton(
-                    onClick = { scope.launch { drawerState.open() } },
-                    modifier = Modifier.staggeredEntrance(0),
-                )
+            item(key = "top bar") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .staggeredEntrance(0),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MenuButton(onClick = { scope.launch { drawerState.open() } })
+                    ProfileAvatar(
+                        photo = photo,
+                        name = userName,
+                        size = 44.dp,
+                        modifier = Modifier.bounceClick(pressedScale = 0.9f) { onDrawerItem(DrawerItem.Settings) },
+                    )
+                }
             }
             item { Spacer(Modifier.height(20.dp)) }
             item(key = "balance") {
@@ -324,6 +382,15 @@ fun HomeScreen(
         }
         }
 
+        PullToSwitchHint(
+            target = otherWallet,
+            progress = pullPx / pullThresholdPx,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 14.dp),
+        )
+
         // Dims the page while the action sheet is open; tapping it closes the sheet.
         if (sheetProgress.value > 0f) {
             Box(
@@ -352,7 +419,41 @@ fun HomeScreen(
     }
 }
 
-/** Opens the sidebar; the only control above the balance card. */
+/** How far to pull down past the top of Home to switch wallet. */
+private val PullToSwitchThreshold = 96.dp
+
+/** Shown in the gap a pull opens: which wallet a release switches to. */
+@Composable
+private fun PullToSwitchHint(target: WalletType, progress: Float, modifier: Modifier = Modifier) {
+    if (progress <= 0f) return
+    val ready = progress >= 1f
+    Row(
+        modifier = modifier.graphicsLayer {
+            alpha = (progress * 1.4f - 0.2f).coerceIn(0f, 1f)
+            translationY = (progress.coerceAtMost(1f) - 1f) * 12.dp.toPx()
+        },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_chevron_up_15),
+            contentDescription = null,
+            modifier = Modifier
+                .size(14.dp)
+                .rotate(if (ready) 0f else 180f),
+            colorFilter = ColorFilter.tint(LocalWalletColors.current.content),
+        )
+        Text(
+            text = if (ready) "Release for ${target.label}" else "Pull down for ${target.label}",
+            color = LocalWalletColors.current.content,
+            fontFamily = InterFontFamily,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/** Opens the sidebar; top left, with the profile button top right. */
 @Composable
 private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(

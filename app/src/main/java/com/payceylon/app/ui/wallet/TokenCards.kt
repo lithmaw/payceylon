@@ -64,7 +64,8 @@ internal fun TokenCardRow(
     LazyRow(
         modifier = modifier.bleed(pagePadding),
         contentPadding = PaddingValues(horizontal = pagePadding),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        // Same as the gap above the row (Home's 16dp spacer), so the grid reads evenly.
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         items(CryptoToken.entries, key = { it.symbol }) { token ->
             TokenCard(
@@ -97,7 +98,7 @@ private fun TokenCard(token: CryptoToken, holding: BigDecimal, hidden: Boolean, 
         modifier = Modifier
             .width(148.dp)
             .bounceClick(pressedScale = 0.97f, onClick = onClick)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(colors.card),
     ) {
         Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp)) {

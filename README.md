@@ -29,9 +29,10 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
 - **Onboarding and sign-in:** onboarding pages, Sri Lankan phone number entry, one-time code
   (from the server log) with resend, then a one-time profile setup (name and @username required; photo and
   email optional).
-- **Home:** a menu button opens the sidebar (profile, Fiat / Crypto wallet, transaction
+- **Home:** a menu button (or a swipe from the left) opens the sidebar (profile, Fiat / Crypto wallet, transaction
   history, my QR code, pay bills, ATMs & agents nearby, cards & bank accounts, account settings,
-  help, log out). Switching wallet fades through a short loader; crypto switches the app to a
+  help, log out); the profile button opens Settings. Pulling down past the top of Home switches to
+  the other wallet (as in Binance). Switching wallet fades through a short loader; crypto switches the app to a
   dark theme. Balance card with hide/show (blurred), month-on-month change pill, Nearby
   and Pay bills shortcuts (fiat) or the deposit address (crypto), recent transactions, and a
   glass action bar that drags open for more actions.
