@@ -95,31 +95,11 @@ fun PaymentMethodsScreen(
                 .padding(vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            SettingsSection("Cards · top up instantly, 1.5% fee", Modifier) {
+            SettingsSection("Cards", Modifier) {
                 MethodList(account.cards, empty = "No cards linked yet", onRemove = { pendingRemoval = it })
             }
-            SettingsSection("Bank accounts · free top-ups and withdrawals", Modifier) {
+            SettingsSection("Bank accounts", Modifier) {
                 MethodList(account.banks, empty = "No bank accounts linked yet", onRemove = { pendingRemoval = it })
-            }
-            Row(
-                modifier = Modifier
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_lock),
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    colorFilter = ColorFilter.tint(colors.contentSecondary),
-                )
-                Text(
-                    text = "PayCeylon keeps only the last four digits of your cards and accounts.",
-                    color = colors.contentSecondary,
-                    fontFamily = InterFontFamily,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                )
             }
         }
         PayCeylonButton(
@@ -132,9 +112,31 @@ fun PaymentMethodsScreen(
         PayCeylonButton(
             label = "Add bank account",
             onClick = onAddBank,
-            style = PayCeylonButtonStyle.Secondary,
+            style = PayCeylonButtonStyle.Primary,
             modifier = Modifier,
         )
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_lock),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                colorFilter = ColorFilter.tint(colors.contentSecondary),
+            )
+            Text(
+                text = "PayCeylon keeps only the last four digits of your cards and accounts.",
+                color = colors.contentSecondary,
+                fontFamily = InterFontFamily,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+        }
     }
 
     pendingRemoval?.let { method ->
