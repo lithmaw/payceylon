@@ -30,31 +30,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.payceylon.app.R
-import com.payceylon.app.ui.account.ProfileAvatar
 import com.payceylon.app.ui.components.bounceClick
 import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
 import com.payceylon.app.ui.theme.PayCeylonPrimary
 
 /** Where the sidebar can take the user; Home decides what each one opens. */
-enum class DrawerItem { Profile, History, Receive, Bills, Nearby, PaymentMethods, Settings, Help, LogOut }
+enum class DrawerItem { History, Receive, Bills, Nearby, PaymentMethods, Settings, Help, LogOut }
 
 /**
- * The left sidebar on Home: the user, the two wallets, then shortcuts and account options.
+ * The left sidebar on Home: the two wallets, then shortcuts and account options.
  * Log out asks first.
  */
 @Composable
 internal fun HomeDrawer(
-    photo: ImageBitmap?,
-    name: String,
-    handle: String,
     selectedWallet: WalletType,
     onWalletChange: (WalletType) -> Unit,
     onItem: (DrawerItem) -> Unit,
@@ -77,37 +71,6 @@ internal fun HomeDrawer(
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .bounceClick(pressedScale = 0.98f) { onItem(DrawerItem.Profile) }
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    ProfileAvatar(photo = photo, size = 48.dp, name = name)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(
-                            text = name,
-                            color = colors.content,
-                            fontFamily = InterFontFamily,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = "@$handle",
-                            color = colors.contentSecondary,
-                            fontFamily = InterFontFamily,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-
                 DrawerHeading("Wallets")
                 WalletType.entries.forEach { wallet ->
                     val selected = wallet == selectedWallet

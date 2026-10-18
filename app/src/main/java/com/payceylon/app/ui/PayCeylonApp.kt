@@ -435,10 +435,8 @@ fun PayCeylonApp(
                         onSeeAllTransactions = { destination = AppDestination.Transactions },
                         photo = account.photo,
                         userName = account.profile.name,
-                        handle = account.profile.handle,
                         onDrawerItem = { item ->
                             when (item) {
-                                DrawerItem.Profile -> destination = AppDestination.Profile
                                 DrawerItem.History -> destination = AppDestination.Transactions
                                 DrawerItem.Receive -> destination = AppDestination.Receive
                                 DrawerItem.Bills -> destination = AppDestination.Bills

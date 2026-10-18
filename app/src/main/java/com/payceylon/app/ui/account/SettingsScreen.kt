@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.payceylon.app.R
 import com.payceylon.app.ui.components.tap
+import com.payceylon.app.ui.wallet.TrimmedText
 import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
 import com.payceylon.app.ui.theme.PayCeylonPrimary
@@ -87,10 +88,12 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                ProfileAvatar(account.photo, size = 44.dp, name = profile.name)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                ProfileAvatar(account.photo, size = 36.dp, name = profile.name)
+                // Trimmed text drops the font's built-in padding, so the two lines sit close.
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         text = profile.name,
+                        style = TrimmedText,
                         color = colors.content,
                         fontFamily = InterFontFamily,
                         fontSize = 16.sp,
@@ -98,6 +101,7 @@ fun SettingsScreen(
                     )
                     Text(
                         text = "@${profile.handle}",
+                        style = TrimmedText,
                         color = PayCeylonPrimary,
                         fontFamily = InterFontFamily,
                         fontSize = 13.sp,

@@ -153,7 +153,6 @@ fun HomeScreen(
     photo: ImageBitmap?,
     /** Shown as an initial when there is no photo. */
     userName: String,
-    handle: String,
     /** Something picked in the sidebar (wallets are handled by [onWalletChange]). */
     onDrawerItem: (DrawerItem) -> Unit,
     hideBalanceByDefault: Boolean,
@@ -244,9 +243,6 @@ fun HomeScreen(
         modifier = modifier,
         drawerContent = {
             HomeDrawer(
-                photo = photo,
-                name = userName,
-                handle = handle,
                 selectedWallet = selectedWallet,
                 onWalletChange = { wallet ->
                     scope.launch { drawerState.close() }
