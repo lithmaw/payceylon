@@ -697,7 +697,7 @@ private fun ShortcutPill(
             painter = painterResource(icon),
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            colorFilter = ColorFilter.tint(PayCeylonPrimary),
+            colorFilter = ColorFilter.tint(colors.content),
         )
         Text(
             text = label,
