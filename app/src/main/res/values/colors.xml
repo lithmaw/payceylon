@@ -1,2 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources />
+<resources>
+    <!-- Launcher icon background: PayCeylon primary red. -->
+    <color name="launcher_background">#D30943</color>
+</resources>
