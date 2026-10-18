@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.payceylon.app.R
@@ -63,7 +64,7 @@ internal fun HomeDrawer(
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .padding(horizontal = 12.dp, vertical = 20.dp),
+                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 20.dp),
         ) {
             // Everything but Log out scrolls; Log out stays at the very bottom.
             Column(
@@ -71,7 +72,7 @@ internal fun HomeDrawer(
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
             ) {
-                DrawerHeading("Wallets")
+                DrawerHeading("Wallets", top = 0.dp)
                 WalletType.entries.forEach { wallet ->
                     val selected = wallet == selectedWallet
                     Row(
@@ -150,10 +151,10 @@ internal fun HomeDrawer(
 }
 
 @Composable
-private fun DrawerHeading(text: String) {
+private fun DrawerHeading(text: String, top: Dp = 24.dp) {
     Text(
         text = text,
-        modifier = Modifier.padding(start = 10.dp, top = 24.dp, bottom = 6.dp),
+        modifier = Modifier.padding(start = 10.dp, top = top, bottom = 6.dp),
         color = LocalWalletColors.current.contentTertiary,
         fontFamily = InterFontFamily,
         fontSize = 12.sp,
