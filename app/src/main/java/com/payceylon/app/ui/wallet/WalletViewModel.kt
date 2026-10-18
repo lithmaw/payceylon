@@ -212,6 +212,9 @@ object SwapRates {
         Asset.SOL to BigDecimal("45000"),
     )
 
+    /** One unit of [asset] in LKR. */
+    fun lkrPrice(asset: Asset): BigDecimal = lkrPrice.getValue(asset)
+
     /** PayCeylon's swap fee, taken from the amount being swapped. */
     val feeRate: BigDecimal = BigDecimal("0.005")
 

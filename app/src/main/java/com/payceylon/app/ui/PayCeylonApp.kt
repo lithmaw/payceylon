@@ -424,19 +424,6 @@ fun PayCeylonApp(
                         onSeeAllTransactions = { destination = AppDestination.Transactions },
                         photo = account.photo,
                         userName = account.profile.name,
-                        notifications = account.notifications,
-                        onMarkAllNotificationsRead = account::markAllRead,
-                        onNotificationClick = { notification ->
-                            account.markRead(notification.id)
-                            val transactionId = notification.transactionId
-                            if (transactionId != null && walletViewModel.transactions.any { it.id == transactionId }) {
-                                selectedTransactionId = transactionId
-                                detailOrigin = AppDestination.Home
-                                destination = AppDestination.TransactionDetail
-                            } else {
-                                destination = AppDestination.Settings
-                            }
-                        },
                         onProfileClick = { destination = AppDestination.Settings },
                         hideBalanceByDefault = account.isEnabled(AccountSetting.HideBalance),
                         monthlyChangeOf = walletViewModel::monthlyChangePercent,

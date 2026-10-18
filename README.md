@@ -29,10 +29,13 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
 - **Onboarding and sign-in:** onboarding pages, Sri Lankan phone number entry, one-time code
   (from the server log) with resend, then a one-time profile setup (name and @username required; photo and
   email optional).
-- **Home:** fiat / crypto wallet switcher (full-screen transition, crypto switches the app to a
-  dark theme), balance card with hide/show (blurred), month-on-month change pill, Nearby and
-  Pay bills shortcuts (fiat) or the deposit address (crypto), recent transactions, and a glass
-  action bar that drags open for more actions.
+- **Home:** fiat / crypto wallet switcher (a short fade through a loader; crypto switches the
+  app to a dark theme), balance card with hide/show (blurred), month-on-month change pill, Nearby
+  and Pay bills shortcuts (fiat) or the deposit address (crypto), recent transactions, and a
+  glass action bar that drags open for more actions.
+- **Token cards** (crypto wallet): one card per token with the holding's value in LKR, the
+  amount held, the 24 h price change and a price chart (simulated around the fixed demo prices).
+  Tapping a card shows that token on the balance card.
 - **Send:** QR scanner (CameraX + ML Kit) or search by username, amount keypad, balance and
   network-fee checks.
 - **Receive:** branded QR code and shareable payment link, with an optional requested amount.
@@ -50,7 +53,6 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
   shows Kurunegala town.
 - **Transactions:** full list with filters, and details with fees, reference, on-chain hash
   (crypto) and a shareable receipt.
-- **Notifications** dropdown on the bell: transactions plus account and security changes.
 - **Push notifications** (Firebase Cloud Messaging): money received, sent, swapped, topped up,
   withdrawn or paid, and account and security changes reach the phone within a few seconds,
   even with the app closed. Tapping one opens the transaction. Android 13+ asks for permission
@@ -156,7 +158,8 @@ images/                          Source design assets from Figma
 
 ## Known gaps
 
-- Swap rates are fixed demo prices; no real bank, card or blockchain transfers happen.
+- Swap rates are fixed demo prices and the token charts are simulated; no real bank, card or
+  blockchain transfers happen.
 - Codes go to the server log instead of SMS; a real build would send them through an SMS provider.
 - Bills and reloads are simulated; a real build would connect to each biller or a bill aggregator.
 - ATM and bank locations are a saved OpenStreetMap copy (`backend/scripts/fetch_osm_banking.py`

@@ -93,7 +93,6 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import com.payceylon.app.ui.account.AppNotification
-import com.payceylon.app.ui.account.NotificationsPanel
 import com.payceylon.app.ui.account.ProfileAvatar
 import com.payceylon.app.ui.account.relativeTime
 import dev.chrisbanes.haze.HazeState
@@ -142,9 +141,6 @@ fun HomeScreen(
     photo: ImageBitmap?,
     /** Shown as an initial when there is no photo. */
     userName: String,
-    notifications: List<AppNotification>,
-    onMarkAllNotificationsRead: () -> Unit,
-    onNotificationClick: (AppNotification) -> Unit,
     onProfileClick: () -> Unit,
     hideBalanceByDefault: Boolean,
     /** Percentage change in an asset's balance over the last month, or null if unknown. */
@@ -231,10 +227,6 @@ fun HomeScreen(
                     onWalletChange = onWalletChange,
                     photo = photo,
                     userName = userName,
-                    notifications = notifications,
-                    transactionFor = { id -> transactions.firstOrNull { it.id == id } },
-                    onMarkAllNotificationsRead = onMarkAllNotificationsRead,
-                    onNotificationClick = onNotificationClick,
                     onProfileClick = onProfileClick,
                     modifier = Modifier.staggeredEntrance(0),
                 )
@@ -257,6 +249,18 @@ fun HomeScreen(
                     } else {
                         FiatShortcutRow(onNearby = onNearby, onBills = onBills)
                     }
+                }
+            }
+            if (isCrypto) {
+                item { Spacer(Modifier.height(16.dp)) }
+                item(key = "token cards") {
+                    TokenCardRow(
+                        balanceOf = balanceOf,
+                        hidden = isBalanceHidden,
+                        onTokenClick = onTokenChange,
+                        pagePadding = 20.dp,
+                        modifier = Modifier.staggeredEntrance(2),
+                    )
                 }
             }
             item { Spacer(Modifier.height(35.dp)) }
@@ -327,15 +331,10 @@ private fun WalletHeader(
     onWalletChange: (WalletType) -> Unit,
     photo: ImageBitmap?,
     userName: String,
-    notifications: List<AppNotification>,
-    transactionFor: (String) -> WalletTransaction?,
-    onMarkAllNotificationsRead: () -> Unit,
-    onNotificationClick: (AppNotification) -> Unit,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var isMenuOpen by remember { mutableStateOf(false) }
-    var isNotificationsOpen by remember { mutableStateOf(false) }
     val chevronRotation by animateFloatAsState(
         targetValue = if (isMenuOpen) 0f else 180f,
         animationSpec = tween(220, easing = PayCeylonEasing),
@@ -401,39 +400,6 @@ private fun WalletHeader(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .bounceClick(pressedScale = 0.9f) { isNotificationsOpen = true },
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_bell),
-                        contentDescription = "Notifications",
-                        modifier = Modifier.size(40.dp),
-                        colorFilter = ColorFilter.tint(LocalWalletColors.current.content),
-                    )
-                    if (notifications.any { !it.read }) {
-                        Box(
-                            modifier = Modifier
-                                .offset(x = 22.dp, y = 10.dp)
-                                .size(6.dp)
-                                .background(PayCeylonPrimary, CircleShape),
-                        )
-                    }
-                }
-                NotificationsPanel(
-                    expanded = isNotificationsOpen,
-                    onDismissRequest = { isNotificationsOpen = false },
-                    notifications = notifications,
-                    transactionFor = transactionFor,
-                    onMarkAllRead = onMarkAllNotificationsRead,
-                    onNotificationClick = {
-                        isNotificationsOpen = false
-                        onNotificationClick(it)
-                    },
-                )
-            }
             ProfileAvatar(
                 photo = photo,
                 name = userName,
