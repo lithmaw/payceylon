@@ -83,6 +83,7 @@ import com.payceylon.app.ui.theme.InterFontFamily
 import com.payceylon.app.ui.theme.LocalWalletColors
 import com.payceylon.app.ui.theme.PayCeylonPrimary
 import com.payceylon.app.ui.wallet.CircleBackButton
+import com.payceylon.app.ui.wallet.SectionHeadingSize
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -423,7 +424,7 @@ fun NearbyScreen(
                     },
                     color = colors.content,
                     fontFamily = InterFontFamily,
-                    fontSize = 20.sp,
+                    fontSize = SectionHeadingSize,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.height(2.dp))

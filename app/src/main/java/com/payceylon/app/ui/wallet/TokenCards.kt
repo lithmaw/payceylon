@@ -3,7 +3,6 @@ package com.payceylon.app.ui.wallet
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,14 +92,13 @@ private fun TokenCard(token: CryptoToken, holding: BigDecimal, hidden: Boolean, 
     val history = remember(token) { MarketHistory.of(token) }
     val isDown = history.changePercent < 0
     val trend = if (isDown) colors.priceDown else colors.priceUp
-    val shape = RoundedCornerShape(22.dp)
+    // Styled like the transaction rows below: a plain card surface.
     Column(
         modifier = Modifier
             .width(196.dp)
             .bounceClick(pressedScale = 0.97f, onClick = onClick)
-            .clip(shape)
-            .background(Brush.verticalGradient(listOf(colors.card, colors.card.copy(alpha = 0.55f))))
-            .border(1.dp, colors.frostedBorder, shape),
+            .clip(RoundedCornerShape(20.dp))
+            .background(colors.card),
     ) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
             Row(verticalAlignment = Alignment.Top) {

@@ -356,15 +356,7 @@ private fun WalletHeader(
                     .bounceClick(role = Role.DropdownList, pressedScale = 0.97f) { isMenuOpen = true }
                     .clip(RoundedCornerShape(12.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                Text(
-                    text = "Personal",
-                    style = TrimmedText,
-                    color = LocalWalletColors.current.contentSecondary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp),
@@ -661,7 +653,7 @@ private fun TransactionsHeader(onSeeAll: () -> Unit, modifier: Modifier = Modifi
             text = "Transactions",
             style = TrimmedText,
             color = LocalWalletColors.current.content,
-            fontSize = 20.sp,
+            fontSize = SectionHeadingSize,
             fontWeight = FontWeight.Medium,
         )
         Text(

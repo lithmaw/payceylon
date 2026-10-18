@@ -34,6 +34,9 @@ import com.payceylon.app.ui.theme.LocalWalletColors
 import com.payceylon.app.ui.theme.InterFontFamily
 
 /** Text style that approximates Figma's cap-trimmed text boxes. */
+/** Section headings on wallet pages ("Transactions", "Near you"), the same size as page titles. */
+internal val SectionHeadingSize = 16.sp
+
 internal val TrimmedText = TextStyle(
     fontFamily = InterFontFamily,
     lineHeight = 1.em,
