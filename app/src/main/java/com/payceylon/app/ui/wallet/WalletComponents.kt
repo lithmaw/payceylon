@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import com.payceylon.app.R
+import com.payceylon.app.ui.account.MethodLogo
+import com.payceylon.app.ui.account.hasMethodLogo
 import com.payceylon.app.ui.bills.BillerLogo
 import com.payceylon.app.ui.bills.billerLogoForName
 import com.payceylon.app.ui.components.bounceClick
@@ -163,7 +165,8 @@ internal fun AssetBadge(asset: Asset) {
 }
 
 /**
- * A transaction's round icon: the biller's logo for bill payments, otherwise [TransactionGlyph]
+ * A transaction's round icon: the biller's logo for bill payments, the bank or card network for
+ * top-ups and withdrawals, otherwise [TransactionGlyph]
  * on a [background] circle.
  */
 @Composable
@@ -175,8 +178,13 @@ internal fun TransactionIcon(
     modifier: Modifier = Modifier,
 ) {
     val logo = if (transaction.direction == TransactionDirection.Bill) billerLogoForName(transaction.counterpartyName) else null
+    // Top-ups and withdrawals are named after the card network or bank they used.
+    val methodLogo = (transaction.direction == TransactionDirection.TopUp || transaction.direction == TransactionDirection.Withdrawal) &&
+        hasMethodLogo(transaction.counterpartyName)
     if (logo != null) {
         BillerLogo(logo, size, modifier)
+    } else if (methodLogo) {
+        MethodLogo(transaction.counterpartyName, size, modifier)
     } else {
         Box(
             modifier = modifier

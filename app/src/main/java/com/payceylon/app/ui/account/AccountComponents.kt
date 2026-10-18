@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -150,7 +151,8 @@ internal fun SettingsRow(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (leading != null) {
-                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { leading() }
+                // At least the line icon's 24dp; a logo may be larger.
+                Box(Modifier.sizeIn(minWidth = 24.dp, minHeight = 24.dp), contentAlignment = Alignment.Center) { leading() }
             } else {
                 LineIcon(icon, tint = iconTint)
             }

@@ -188,7 +188,7 @@ private fun MethodList(methods: List<PaymentMethod>, empty: String, onRemove: (P
     methods.forEachIndexed { index, method ->
         SettingsRow(
             icon = method.icon,
-            leading = method.brand?.let { brand -> { CardLogo(brand) } },
+            leading = { PaymentMethodBadge(method, 36.dp) },
             title = method.title,
             value = method.detail,
             showDivider = index < methods.lastIndex,

@@ -32,29 +32,42 @@ internal fun bankLogo(name: String): Int? = when (name) {
     else -> null
 }
 
-/**
- * A linked card or bank as a logo: the card network (Visa, Mastercard, Amex…) or the bank,
- * on a white rounded square; the generic card or bank icon when there is no logo.
- */
+/** The card network named [name] ("Visa", "AMEX"…), as top-up transactions name their card. */
+internal fun cardBrandNamed(name: String): CardBrand? = CardBrand.entries.firstOrNull { it.label.equals(name, ignoreCase = true) }
+
+/** True when [name] (a bank or card network, as transactions name them) has a logo to show. */
+internal fun hasMethodLogo(name: String): Boolean = bankLogo(name) != null || cardBrandNamed(name) != null
+
+/** The logo of the bank or card network named [name], on a white rounded square. */
 @Composable
-internal fun PaymentMethodBadge(method: PaymentMethod, size: Dp) {
-    val brand = method.brand
-    val bank = if (method.type == PaymentMethodType.Bank) bankLogo(method.name) else null
+internal fun MethodLogo(name: String, size: Dp, modifier: Modifier = Modifier) {
+    val bank = bankLogo(name)
+    val brand = cardBrandNamed(name)
     when {
-        bank != null -> BillerLogo(bank, size)
+        bank != null -> BillerLogo(bank, size, modifier)
         brand != null -> {
             val shape = RoundedCornerShape(size * 0.28f)
             Box(
-                modifier = Modifier
+                modifier = modifier
                     .size(size)
                     .clip(shape)
                     .background(Color.White)
                     .border(size * 0.025f, LocalWalletColors.current.subtle, shape),
                 contentAlignment = Alignment.Center,
             ) {
-                CardLogo(brand, maxWidth = size * 0.72f, maxHeight = size * 0.46f)
+                // Card marks are wide; two thirds of the tile keeps them in line with the bank logos.
+                CardLogo(brand, maxWidth = size * 0.62f, maxHeight = size * 0.4f)
             }
         }
-        else -> MethodBadge(method.icon, size.value.toInt())
     }
+}
+
+/**
+ * A linked card or bank as a logo: the card network (Visa, Mastercard, Amex…) or the bank,
+ * on a white rounded square; the generic card or bank icon when there is no logo.
+ */
+@Composable
+internal fun PaymentMethodBadge(method: PaymentMethod, size: Dp) {
+    val name = method.brand?.label ?: method.name
+    if (hasMethodLogo(name)) MethodLogo(name, size) else MethodBadge(method.icon, size.value.toInt())
 }
