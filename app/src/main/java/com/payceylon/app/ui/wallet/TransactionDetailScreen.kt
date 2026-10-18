@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.payceylon.app.R
@@ -150,13 +151,18 @@ fun TransactionDetailScreen(
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(6.dp))
+            // One line; the full name is in the details card below.
             Text(
                 text = transaction.title,
-                modifier = Modifier.staggeredEntrance(1),
+                modifier = Modifier
+                    .staggeredEntrance(1)
+                    .padding(horizontal = 24.dp),
                 color = colors.contentSecondary,
                 fontFamily = InterFontFamily,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(12.dp))
             Text(

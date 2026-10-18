@@ -92,6 +92,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.DpOffset
@@ -762,6 +763,7 @@ internal fun TransactionRow(
         ) {
             TransactionIcon(transaction, size = 50.dp, glyphSize = 24.dp, background = LocalWalletColors.current.subtle)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Long names end in "…" at the space available, so the row never wraps.
                 Text(
                     text = transaction.title,
                     style = TrimmedText,
@@ -769,6 +771,7 @@ internal fun TransactionRow(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -782,10 +785,12 @@ internal fun TransactionRow(
                                 transaction.counterpartyHandle
                             else -> "@${transaction.counterpartyHandle}"
                         },
+                        modifier = Modifier.weight(1f, fill = false),
                         style = TrimmedText,
                         color = LocalWalletColors.current.contentSecondary,
                         fontSize = 12.sp,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Image(
                         painter = painterResource(R.drawable.ic_dot_separator),
