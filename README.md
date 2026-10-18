@@ -151,6 +151,8 @@ images/                          Source design assets from Figma
 
 ## Simulated behaviour
 
+- **New accounts start with zero balances** in every currency. Add money with Top Up (a linked
+  demo card or bank) or by receiving a payment, then swap LKR into crypto.
 - **Biometric approval:** when on, Send, Withdraw and Top up ask for fingerprint, face or screen
   lock first (skipped on phones with no screen lock).
 - **Withdrawals** start as *Pending* and the server completes them after 5 minutes

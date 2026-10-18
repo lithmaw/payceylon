@@ -74,7 +74,6 @@ fun OtpScreen(
     onCodeComplete: suspend (String) -> String?,
     /** Texts a new code. */
     onResend: () -> Unit,
-    onLogIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var code by rememberSaveable { mutableStateOf("") }
@@ -284,14 +283,6 @@ fun OtpScreen(
             style = PayCeylonButtonStyle.Secondary,
             enabled = secondsRemaining == 0,
             height = 54.dp,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = "Already have an account? Log In",
-            modifier = Modifier.clickable(onClick = onLogIn),
-            color = PayCeylonRed,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
         )
         Spacer(Modifier.weight(1f))
     }

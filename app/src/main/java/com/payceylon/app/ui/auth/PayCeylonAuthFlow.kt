@@ -95,11 +95,6 @@ fun PayCeylonAuthFlow(onAuthenticated: () -> Unit) {
                     }
                 },
                 onResend = { requestCode() },
-                // Signing in and signing up are the same phone verification.
-                onLogIn = {
-                    destination = AuthDestination.Onboarding
-                    onboardingPage = 2
-                },
             )
         }
     }

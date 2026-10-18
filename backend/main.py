@@ -48,13 +48,8 @@ BANKS = {
     "Sampath Bank", "Seylan Bank", "NDB Bank", "Nations Trust Bank",
     "DFCC Bank", "Pan Asia Bank",
 }
-DEFAULT_BALANCES = {
-    "LKR": Decimal("32483.75"),
-    "USDT": Decimal("1284.32"),
-    "BTC": Decimal("0.042150"),
-    "ETH": Decimal("0.8532"),
-    "SOL": Decimal("41.20"),
-}
+# New accounts start empty; money comes in by top-up (card or bank) or from another user.
+DEFAULT_BALANCES = {asset: Decimal("0") for asset in ("LKR", "USDT", "BTC", "ETH", "SOL")}
 DEMO_PEERS = [
     ("Sajjad Ahamed", "sajjad67"),
     ("Janidu Perera", "janidup"),

@@ -57,6 +57,17 @@ def tearDownModule():
         _tempdir.cleanup()
 
 
+# Test accounts start funded so payments can be exercised; real new accounts start at zero.
+REAL_DEFAULT_BALANCES = dict(main.DEFAULT_BALANCES)
+TEST_BALANCES = {
+    "LKR": Decimal("32483.75"),
+    "USDT": Decimal("1284.32"),
+    "BTC": Decimal("0.042150"),
+    "ETH": Decimal("0.8532"),
+    "SOL": Decimal("41.20"),
+}
+
+
 def fake_verify(token, check_revoked=False):
     kind, uid, phone = token.split("|")
     if kind != "tok":
@@ -80,6 +91,9 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
             patcher = mock.patch.object(main.auth, name, fake)
             patcher.start()
             self.addCleanup(patcher.stop)
+        balances = mock.patch.dict(main.DEFAULT_BALANCES, TEST_BALANCES)
+        balances.start()
+        self.addCleanup(balances.stop)
         self.lifespan = main.app.router.lifespan_context(main.app)
         await self.lifespan.__aenter__()
         transport = httpx.ASGITransport(app=main.app, raise_app_exceptions=False)
@@ -147,6 +161,14 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         balances = (await self.client.get("/v1/wallet/balances", headers=self.auth(token))).json()["balances"]
         self.assertEqual(balances["LKR"], "32483.75")
         self.assertEqual(balances["BTC"], "0.042150")
+
+    async def test_new_accounts_start_with_zero_balances(self):
+        self.assertTrue(all(value == 0 for value in REAL_DEFAULT_BALANCES.values()))
+        with mock.patch.dict(main.DEFAULT_BALANCES, REAL_DEFAULT_BALANCES):
+            token, _ = await self.sign_up()
+        balances = (await self.client.get("/v1/wallet/balances", headers=self.auth(token))).json()["balances"]
+        self.assertEqual(set(balances), set(main.ASSETS))
+        self.assertTrue(all(Decimal(value) == 0 for value in balances.values()))
 
     async def test_code_from_the_log_signs_in_the_same_account_each_time(self):
         phone = f"+9477{next(_phones):07d}"
