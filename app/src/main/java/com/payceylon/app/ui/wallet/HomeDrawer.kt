@@ -34,7 +34,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.payceylon.app.R
@@ -74,25 +73,24 @@ internal fun HomeDrawer(
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
             ) {
-                DrawerHeading("Wallets", top = 0.dp)
-                // The two wallets side by side, icon over name; the open one is filled in red.
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // One row per wallet; the open one is filled in red.
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     WalletType.entries.forEach { wallet ->
                         val selected = wallet == selectedWallet
                         val content = if (selected) Color.White else colors.content
-                        Column(
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .bounceClick(pressedScale = 0.96f) { onWalletChange(wallet) }
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(if (selected) PayCeylonPrimary else colors.card)
-                                .padding(vertical = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                                .fillMaxWidth()
+                                .bounceClick(pressedScale = 0.98f) { onWalletChange(wallet) }
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (selected) PayCeylonPrimary else Color.Transparent)
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(36.dp)
                                     .background(if (selected) Color.White.copy(alpha = 0.18f) else colors.subtle, CircleShape),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -102,8 +100,8 @@ internal fun HomeDrawer(
                                 text = wallet.label,
                                 color = content,
                                 fontFamily = InterFontFamily,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
                             )
                         }
                     }
@@ -154,10 +152,10 @@ internal fun HomeDrawer(
 }
 
 @Composable
-private fun DrawerHeading(text: String, top: Dp = 24.dp) {
+private fun DrawerHeading(text: String) {
     Text(
         text = text,
-        modifier = Modifier.padding(start = 10.dp, top = top, bottom = 6.dp),
+        modifier = Modifier.padding(start = 10.dp, top = 24.dp, bottom = 6.dp),
         color = LocalWalletColors.current.contentTertiary,
         fontFamily = InterFontFamily,
         fontSize = 12.sp,
