@@ -105,7 +105,8 @@ fun PaymentMethodsScreen(
         PayCeylonButton(
             label = "Add card",
             onClick = onAddCard,
-            style = PayCeylonButtonStyle.Accent,
+            style = PayCeylonButtonStyle.Primary,
+            icon = R.drawable.ic_top_up,
             modifier = Modifier,
         )
         Spacer(Modifier.height(10.dp))
@@ -113,6 +114,7 @@ fun PaymentMethodsScreen(
             label = "Add bank account",
             onClick = onAddBank,
             style = PayCeylonButtonStyle.Primary,
+            icon = R.drawable.ic_withdraw,
             modifier = Modifier,
         )
         Spacer(Modifier.height(16.dp))
