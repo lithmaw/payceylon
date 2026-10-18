@@ -177,7 +177,8 @@ images/                          Source design assets from Figma
 - Card network logos: [svg-credit-card-payment-icons](https://github.com/aaronfagan/svg-credit-card-payment-icons)
   (Apache 2.0), converted to vector drawables.
 - Glass blur: [Haze](https://github.com/chrisbanes/haze) (Apache 2.0).
-- Biller logos (CEB, LECO, NWSDB, Dialog, SLT-Mobitel, Hutch, Dialog TV) are trademarks of their
-  owners, taken from Wikipedia and used only to identify each company.
+- Biller logos (CEB, LECO, NWSDB, Dialog, SLT-Mobitel, Hutch, Dialog TV) and bank logos (BOC,
+  People's Bank, Commercial Bank, HNB, Sampath, Seylan, Nations Trust, DFCC, Pan Asia) are
+  trademarks of their owners, taken from Wikipedia and used only to identify each company.
 - Map: [osmdroid](https://github.com/osmdroid/osmdroid) (Apache 2.0); map tiles and ATM/bank data
   © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).

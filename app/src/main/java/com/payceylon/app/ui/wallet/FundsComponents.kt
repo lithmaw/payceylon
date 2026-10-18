@@ -101,7 +101,8 @@ internal fun <T> MethodSelector(
     selected: T,
     onSelect: (T) -> Unit,
     title: (T) -> String,
-    icon: (T) -> Int,
+    /** The option's leading logo or icon, drawn at the given size in dp. */
+    badge: @Composable (T, Int) -> Unit,
     /** Name shown in the picker; [detail] goes underneath it. */
     menuLabel: (T) -> String,
     detail: (T) -> String,
@@ -121,7 +122,7 @@ internal fun <T> MethodSelector(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            MethodBadge(icon(selected))
+            badge(selected, 40)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -163,7 +164,7 @@ internal fun <T> MethodSelector(
             onSelect = onSelect,
             label = menuLabel,
             supportingText = detail,
-            leading = { MethodBadge(icon(it), size = 36) },
+            leading = { badge(it, 36) },
             width = 310.dp,
         )
     }

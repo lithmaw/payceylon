@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.payceylon.app.ui.account.PaymentMethodBadge
 import com.payceylon.app.ui.account.PaymentMethod
 import com.payceylon.app.ui.auth.PayCeylonButton
 import com.payceylon.app.ui.auth.PayCeylonButtonStyle
@@ -165,7 +166,7 @@ fun WithdrawScreen(
                     selected = destination,
                     onSelect = { bankId = it.id },
                     title = { it.title },
-                    icon = { it.icon },
+                    badge = { method, size -> PaymentMethodBadge(method, size.dp) },
                     menuLabel = { it.name },
                     detail = { "${it.masked} · ${it.detail} · ETA ${it.eta.lowercase()}" },
                     modifier = Modifier,
