@@ -4,6 +4,8 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -73,38 +75,39 @@ internal fun HomeDrawer(
                     .verticalScroll(rememberScrollState()),
             ) {
                 DrawerHeading("Wallets", top = 0.dp)
-                WalletType.entries.forEach { wallet ->
-                    val selected = wallet == selectedWallet
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .bounceClick(pressedScale = 0.98f) { onWalletChange(wallet) }
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (selected) colors.card else Color.Transparent)
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        WalletBadge(wallet)
-                        Text(
-                            text = wallet.label,
-                            modifier = Modifier.weight(1f),
-                            color = colors.content,
-                            fontFamily = InterFontFamily,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        if (selected) {
-                            Image(
-                                painter = painterResource(R.drawable.ic_check),
-                                contentDescription = "Selected",
-                                modifier = Modifier.size(18.dp),
-                                colorFilter = ColorFilter.tint(PayCeylonPrimary),
+                // The two wallets side by side, icon over name; the open one is filled in red.
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    WalletType.entries.forEach { wallet ->
+                        val selected = wallet == selectedWallet
+                        val content = if (selected) Color.White else colors.content
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .bounceClick(pressedScale = 0.96f) { onWalletChange(wallet) }
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(if (selected) PayCeylonPrimary else colors.card)
+                                .padding(vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(if (selected) Color.White.copy(alpha = 0.18f) else colors.subtle, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                WalletIcon(wallet, tint = content)
+                            }
+                            Text(
+                                text = wallet.label,
+                                color = content,
+                                fontFamily = InterFontFamily,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
                             )
                         }
                     }
                 }
-
                 DrawerHeading("Money")
                 DrawerRow(R.drawable.ic_doc, "Transaction history") { onItem(DrawerItem.History) }
                 DrawerRow(R.drawable.ic_scan, "My QR code") { onItem(DrawerItem.Receive) }
