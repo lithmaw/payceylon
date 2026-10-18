@@ -50,7 +50,7 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * One card per token for the crypto wallet: what the holding is worth in LKR, the 24 h price
+ * One small card per token for the crypto wallet: the holding's value in LKR, the 24 h price
  * change and a price chart. Scrolls sideways, edge to edge past the page's [pagePadding].
  */
 @Composable
@@ -64,7 +64,7 @@ internal fun TokenCardRow(
     LazyRow(
         modifier = modifier.bleed(pagePadding),
         contentPadding = PaddingValues(horizontal = pagePadding),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         items(CryptoToken.entries, key = { it.symbol }) { token ->
             TokenCard(
@@ -95,77 +95,47 @@ private fun TokenCard(token: CryptoToken, holding: BigDecimal, hidden: Boolean, 
     // Styled like the transaction rows below: a plain card surface.
     Column(
         modifier = Modifier
-            .width(196.dp)
+            .width(148.dp)
             .bounceClick(pressedScale = 0.97f, onClick = onClick)
             .clip(RoundedCornerShape(20.dp))
             .background(colors.card),
     ) {
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = token.symbol,
-                        color = colors.content,
-                        fontFamily = InterFontFamily,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = token.tokenName,
-                        color = colors.contentTertiary,
-                        fontFamily = InterFontFamily,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(colors.subtle, RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(painter = painterResource(token.icon), contentDescription = null, modifier = Modifier.size(24.dp))
-                }
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Image(painter = painterResource(token.icon), contentDescription = null, modifier = Modifier.size(22.dp))
+                Text(
+                    text = token.symbol,
+                    modifier = Modifier.weight(1f),
+                    color = colors.content,
+                    fontFamily = InterFontFamily,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "${if (isDown) "\u2193" else "\u2191"}${String.format(Locale.US, "%.1f", abs(history.changePercent))}%",
+                    color = trend,
+                    fontFamily = InterFontFamily,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
-            Spacer(Modifier.height(18.dp))
-            val value = MarketHistory.valueInLkr(token, holding)
-            val (whole, fraction) = value.toMoneyParts(2)
+            Spacer(Modifier.height(10.dp))
+            // Whole rupees only: the card is small and the cents add nothing here.
+            val value = MarketHistory.valueInLkr(token, holding).setScale(0, java.math.RoundingMode.HALF_UP)
             BasicText(
                 text = buildAnnotatedString {
-                    withStyle(SpanStyle(color = colors.contentTertiary, fontSize = 14.sp)) { append("LKR ") }
-                    if (hidden) {
-                        append("\u2022\u2022\u2022\u2022\u2022")
-                    } else {
-                        append(whole)
-                        withStyle(SpanStyle(color = colors.contentTertiary)) { append(fraction) }
-                    }
+                    withStyle(SpanStyle(color = colors.contentTertiary, fontSize = 11.sp)) { append("LKR ") }
+                    append(if (hidden) "\u2022\u2022\u2022\u2022\u2022" else value.toMoneyParts(0).first)
                 },
                 style = TextStyle(
                     color = colors.content,
                     fontFamily = InterFontFamily,
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 24.sp,
-                    letterSpacing = (-0.6).sp,
+                    fontSize = 17.sp,
+                    letterSpacing = (-0.3).sp,
                 ),
                 maxLines = 1,
-                autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 24.sp),
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = if (hidden) "\u2022\u2022\u2022\u2022 ${token.symbol}" else "${holding.toAmountString(Asset.of(token))} ${token.symbol}",
-                color = colors.contentSecondary,
-                fontFamily = InterFontFamily,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "${if (isDown) "\u2193" else "\u2191"} ${String.format(Locale.US, "%.2f", abs(history.changePercent))}%  ",
-                color = trend,
-                fontFamily = InterFontFamily,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
+                autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 17.sp),
             )
         }
         Sparkline(
@@ -173,7 +143,7 @@ private fun TokenCard(token: CryptoToken, holding: BigDecimal, hidden: Boolean, 
             color = trend,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp),
+                .height(40.dp),
         )
     }
 }

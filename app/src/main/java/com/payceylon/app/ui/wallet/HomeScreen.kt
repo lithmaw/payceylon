@@ -54,6 +54,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -141,7 +144,9 @@ fun HomeScreen(
     photo: ImageBitmap?,
     /** Shown as an initial when there is no photo. */
     userName: String,
-    onProfileClick: () -> Unit,
+    handle: String,
+    /** Something picked in the sidebar (wallets are handled by [onWalletChange]). */
+    onDrawerItem: (DrawerItem) -> Unit,
     hideBalanceByDefault: Boolean,
     /** Percentage change in an asset's balance over the last month, or null if unknown. */
     monthlyChangeOf: (Asset) -> BigDecimal?,
@@ -184,8 +189,33 @@ fun HomeScreen(
         label = "backdrop parallax",
     )
 
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        modifier = modifier,
+        drawerContent = {
+            HomeDrawer(
+                photo = photo,
+                name = userName,
+                handle = handle,
+                selectedWallet = selectedWallet,
+                onWalletChange = { wallet ->
+                    scope.launch { drawerState.close() }
+                    onWalletChange(wallet)
+                },
+                onItem = { item ->
+                    scope.launch { drawerState.close() }
+                    onDrawerItem(item)
+                },
+            )
+        },
+    ) {
     Box(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(LocalWalletColors.current.background),
     ) {
@@ -221,13 +251,9 @@ fun HomeScreen(
                 bottom = 150.dp,
             ),
         ) {
-            item(key = "header") {
-                WalletHeader(
-                    selectedWallet = selectedWallet,
-                    onWalletChange = onWalletChange,
-                    photo = photo,
-                    userName = userName,
-                    onProfileClick = onProfileClick,
+            item(key = "menu") {
+                MenuButton(
+                    onClick = { scope.launch { drawerState.open() } },
                     modifier = Modifier.staggeredEntrance(0),
                 )
             }
@@ -323,82 +349,25 @@ fun HomeScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
+    }
 }
 
+/** Opens the sidebar; the only control above the balance card. */
 @Composable
-private fun WalletHeader(
-    selectedWallet: WalletType,
-    onWalletChange: (WalletType) -> Unit,
-    photo: ImageBitmap?,
-    userName: String,
-    onProfileClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var isMenuOpen by remember { mutableStateOf(false) }
-    val chevronRotation by animateFloatAsState(
-        targetValue = if (isMenuOpen) 0f else 180f,
-        animationSpec = tween(220, easing = PayCeylonEasing),
-        label = "wallet chevron",
-    )
-    Row(
+private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
         modifier = modifier
-            .fillMaxWidth()
-            .frostedSurface()
-            // The wallet selector carries its own 8dp/4dp inset (so its rounded press area
-            // never clips the text); outer padding is reduced to keep the Figma positions.
-            .padding(start = 7.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .size(44.dp)
+            .bounceClick(pressedScale = 0.9f, onClick = onClick)
+            .frostedSurface(CircleShape),
+        contentAlignment = Alignment.Center,
     ) {
-        Box {
-            Column(
-                modifier = Modifier
-                    .bounceClick(role = Role.DropdownList, pressedScale = 0.97f) { isMenuOpen = true }
-                    .clip(RoundedCornerShape(12.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Text(
-                        text = selectedWallet.label,
-                        style = TrimmedText,
-                        color = LocalWalletColors.current.content,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Image(
-                        painter = painterResource(R.drawable.ic_chevron_up_15),
-                        colorFilter = ColorFilter.tint(LocalWalletColors.current.content),
-                        contentDescription = "Switch wallet",
-                        modifier = Modifier
-                            .size(15.dp)
-                            .rotate(chevronRotation),
-                    )
-                }
-            }
-            PayCeylonDropdownMenu(
-                expanded = isMenuOpen,
-                onDismissRequest = { isMenuOpen = false },
-                options = WalletType.entries,
-                selected = selectedWallet,
-                onSelect = onWalletChange,
-                label = { it.label },
-                leading = { wallet -> WalletBadge(wallet) },
-            )
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ProfileAvatar(
-                photo = photo,
-                name = userName,
-                size = 40.dp,
-                modifier = Modifier.bounceClick(pressedScale = 0.9f, onClick = onProfileClick),
-            )
-        }
+        Image(
+            painter = painterResource(R.drawable.ic_menu),
+            contentDescription = "Menu",
+            modifier = Modifier.size(22.dp),
+            colorFilter = ColorFilter.tint(LocalWalletColors.current.content),
+        )
     }
 }
 

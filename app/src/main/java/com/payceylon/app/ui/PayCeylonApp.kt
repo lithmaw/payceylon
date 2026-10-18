@@ -86,6 +86,7 @@ import com.payceylon.app.ui.theme.CryptoWalletColors
 import com.payceylon.app.ui.theme.FiatWalletColors
 import com.payceylon.app.ui.theme.LocalWalletColors
 import com.payceylon.app.ui.wallet.Asset
+import com.payceylon.app.ui.wallet.DrawerItem
 import com.payceylon.app.ui.wallet.HomeScreen
 import com.payceylon.app.ui.wallet.PaymentRequest
 import com.payceylon.app.ui.wallet.QrScanScreen
@@ -183,6 +184,16 @@ fun PayCeylonApp(
         sendMoneyOrigin = origin
         sendMoneySession++
         destination = AppDestination.SendMoney
+    }
+
+    fun openHelp() {
+        val email = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:support@payceylon.lk"))
+            .putExtra(Intent.EXTRA_SUBJECT, "PayCeylon support (@${account.profile.handle})")
+        try {
+            context.startActivity(email)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(context, "Email support@payceylon.lk", Toast.LENGTH_LONG).show()
+        }
     }
 
     fun openAddMethod(target: AppDestination, origin: AppDestination) {
@@ -424,7 +435,20 @@ fun PayCeylonApp(
                         onSeeAllTransactions = { destination = AppDestination.Transactions },
                         photo = account.photo,
                         userName = account.profile.name,
-                        onProfileClick = { destination = AppDestination.Settings },
+                        handle = account.profile.handle,
+                        onDrawerItem = { item ->
+                            when (item) {
+                                DrawerItem.Profile -> destination = AppDestination.Profile
+                                DrawerItem.History -> destination = AppDestination.Transactions
+                                DrawerItem.Receive -> destination = AppDestination.Receive
+                                DrawerItem.Bills -> destination = AppDestination.Bills
+                                DrawerItem.Nearby -> destination = AppDestination.Nearby
+                                DrawerItem.PaymentMethods -> destination = AppDestination.PaymentMethods
+                                DrawerItem.Settings -> destination = AppDestination.Settings
+                                DrawerItem.Help -> openHelp()
+                                DrawerItem.LogOut -> walletViewModel.logOut()
+                            }
+                        },
                         hideBalanceByDefault = account.isEnabled(AccountSetting.HideBalance),
                         monthlyChangeOf = walletViewModel::monthlyChangePercent,
                     )
@@ -492,15 +516,7 @@ fun PayCeylonApp(
                             legalDocument = document
                             destination = AppDestination.Legal
                         },
-                        onHelp = {
-                            val email = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:support@payceylon.lk"))
-                                .putExtra(Intent.EXTRA_SUBJECT, "PayCeylon support (@${account.profile.handle})")
-                            try {
-                                context.startActivity(email)
-                            } catch (_: ActivityNotFoundException) {
-                                Toast.makeText(context, "Email support@payceylon.lk", Toast.LENGTH_LONG).show()
-                            }
-                        },
+                        onHelp = ::openHelp,
                         onLogOut = walletViewModel::logOut,
                         appLockEnabled = appLockEnabled,
                         onAppLockChange = ::setAppLock,

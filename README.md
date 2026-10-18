@@ -29,12 +29,14 @@ Deploy Logs. Codes last 5 minutes, allow 5 tries, and can be resent after 30 sec
 - **Onboarding and sign-in:** onboarding pages, Sri Lankan phone number entry, one-time code
   (from the server log) with resend, then a one-time profile setup (name and @username required; photo and
   email optional).
-- **Home:** fiat / crypto wallet switcher (a short fade through a loader; crypto switches the
-  app to a dark theme), balance card with hide/show (blurred), month-on-month change pill, Nearby
+- **Home:** a menu button opens the sidebar (profile, Fiat / Crypto wallet, transaction
+  history, my QR code, pay bills, ATMs & agents nearby, cards & bank accounts, account settings,
+  help, log out). Switching wallet fades through a short loader; crypto switches the app to a
+  dark theme. Balance card with hide/show (blurred), month-on-month change pill, Nearby
   and Pay bills shortcuts (fiat) or the deposit address (crypto), recent transactions, and a
   glass action bar that drags open for more actions.
-- **Token cards** (crypto wallet): one card per token with the holding's value in LKR, the
-  amount held, the 24 h price change and a price chart (simulated around the fixed demo prices).
+- **Token cards** (crypto wallet): a small card per token with the holding's value in LKR, the
+  24 h price change and a price chart (simulated around the fixed demo prices).
   Tapping a card shows that token on the balance card.
 - **Send:** QR scanner (CameraX + ML Kit) or search by username, amount keypad, balance and
   network-fee checks.
